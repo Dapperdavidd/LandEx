@@ -2,6 +2,7 @@ pub mod config;
 pub mod domain;
 pub mod error;
 pub mod ingestion;
+pub mod investment;
 pub mod repository;
 pub mod routes;
 pub mod state;
@@ -16,6 +17,7 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::health::readiness)
             .service(routes::markets::list_markets)
             .service(routes::markets::get_market)
+            .service(routes::investment::analyze_investment)
             .service(routes::properties::list_properties)
             .service(routes::properties::get_property),
     );
