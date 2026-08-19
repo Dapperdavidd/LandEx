@@ -12,6 +12,18 @@ pub enum LocationKind {
     Neighborhood,
 }
 
+impl LocationKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Country => "country",
+            Self::Region => "region",
+            Self::City => "city",
+            Self::District => "district",
+            Self::Neighborhood => "neighborhood",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Location {
     pub id: Uuid,

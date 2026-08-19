@@ -113,14 +113,6 @@ impl ProviderPage {
                     "listing price cannot be negative".to_owned(),
                 ));
             }
-            if listing
-                .removed_at
-                .is_some_and(|removed_at| removed_at < listing.observed_at)
-            {
-                return Err(IngestionError::InvalidRecord(
-                    "listing removed_at cannot precede observed_at".to_owned(),
-                ));
-            }
         }
 
         Ok(())
@@ -146,6 +138,13 @@ pub enum IngestionError {
     InvalidResponse(String),
     #[error("normalized record is invalid: {0}")]
     InvalidRecord(String),
+    #[error("normalized record references missing {entity}: {source_id}")]
+    MissingReference {
+        entity: &'static str,
+        source_id: String,
+    },
+    #[error("provider returned a repeated pagination cursor")]
+    RepeatedCursor,
     #[error("database operation failed: {0}")]
     Database(#[from] sqlx::Error),
 }

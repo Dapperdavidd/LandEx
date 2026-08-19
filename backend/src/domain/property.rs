@@ -17,11 +17,35 @@ pub enum PropertyType {
     Other,
 }
 
+impl PropertyType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Apartment => "apartment",
+            Self::House => "house",
+            Self::Commercial => "commercial",
+            Self::Land => "land",
+            Self::Hotel => "hotel",
+            Self::Retail => "retail",
+            Self::Industrial => "industrial",
+            Self::Other => "other",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ListingType {
     Sale,
     Rent,
+}
+
+impl ListingType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sale => "sale",
+            Self::Rent => "rent",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -34,6 +58,20 @@ pub enum ListingStatus {
     Withdrawn,
     Expired,
     Unknown,
+}
+
+impl ListingStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Pending => "pending",
+            Self::Sold => "sold",
+            Self::Rented => "rented",
+            Self::Withdrawn => "withdrawn",
+            Self::Expired => "expired",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
