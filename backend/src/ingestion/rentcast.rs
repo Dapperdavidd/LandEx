@@ -9,13 +9,15 @@ use serde_json::{Value, json};
 
 use super::{
     IngestionError, PropertyProvider, ProviderListing, ProviderLocation, ProviderPage,
-    ProviderProperty,
+    ProviderProperty, RequestBudget,
 };
 use crate::domain::{ListingStatus, ListingType, LocationKind, PropertyType};
 
 const DEFAULT_BASE_URL: &str = "https://api.rentcast.io/v1/";
 const DEFAULT_PAGE_SIZE: u16 = 500;
 const MAX_PAGE_SIZE: u16 = 500;
+const HARD_REQUEST_LIMIT: u16 = 45;
+const REQUEST_WINDOW_DAYS: u16 = 32;
 const SQFT_TO_SQM: Decimal = Decimal::from_parts(9_290_304, 0, 0, false, 8);
 
 pub struct RentCastProvider {
@@ -198,6 +200,13 @@ impl RentCastProvider {
 impl PropertyProvider for RentCastProvider {
     fn slug(&self) -> &'static str {
         "rentcast"
+    }
+
+    fn request_budget(&self) -> Option<RequestBudget> {
+        Some(RequestBudget {
+            max_attempts: HARD_REQUEST_LIMIT,
+            window_days: REQUEST_WINDOW_DAYS,
+        })
     }
 
     async fn fetch_page(&self, cursor: Option<&str>) -> Result<ProviderPage, IngestionError> {

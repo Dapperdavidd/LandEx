@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use super::{
     IngestionError, PropertyProvider, ProviderListing, ProviderLocation, ProviderPage,
-    ProviderProperty,
+    ProviderProperty, RequestBudget,
 };
 use crate::domain::ListingType;
 
@@ -30,7 +30,27 @@ impl IngestionService {
         let mut report = IngestionReport::default();
 
         for _ in 0..max_pages {
-            let page = provider.fetch_page(cursor.as_deref()).await?;
+            let attempt_id = match provider.request_budget() {
+                Some(budget) => Some(
+                    self.reserve_request(provider_id, provider.slug(), cursor.as_deref(), budget)
+                        .await?,
+                ),
+                None => None,
+            };
+            let page = match provider.fetch_page(cursor.as_deref()).await {
+                Ok(page) => {
+                    if let Some(attempt_id) = attempt_id {
+                        self.record_request_outcome(attempt_id, "succeeded").await?;
+                    }
+                    page
+                }
+                Err(error) => {
+                    if let Some(attempt_id) = attempt_id {
+                        let _ = self.record_request_outcome(attempt_id, "failed").await;
+                    }
+                    return Err(error);
+                }
+            };
             page.validate()?;
 
             let page_report = self.persist_page(provider_id, &page).await?;
@@ -65,6 +85,71 @@ impl IngestionService {
         .bind(slug)
         .fetch_one(&self.pool)
         .await
+    }
+
+    async fn reserve_request(
+        &self,
+        provider_id: Uuid,
+        provider_slug: &str,
+        cursor: Option<&str>,
+        budget: RequestBudget,
+    ) -> Result<Uuid, IngestionError> {
+        let mut transaction = self.pool.begin().await?;
+        let lock_key = format!("provider-request-budget:{provider_slug}");
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(lock_key)
+            .execute(&mut *transaction)
+            .await?;
+
+        let attempts: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM provider_request_attempts
+            WHERE provider_id = $1
+              AND requested_at >= NOW() - ($2 * INTERVAL '1 day')
+            "#,
+        )
+        .bind(provider_id)
+        .bind(i32::from(budget.window_days))
+        .fetch_one(&mut *transaction)
+        .await?;
+
+        if attempts >= i64::from(budget.max_attempts) {
+            return Err(IngestionError::RequestLimitReached {
+                provider: provider_slug.to_owned(),
+                attempts,
+                limit: budget.max_attempts,
+                window_days: budget.window_days,
+            });
+        }
+
+        let attempt_id = sqlx::query_scalar(
+            r#"
+            INSERT INTO provider_request_attempts (provider_id, cursor)
+            VALUES ($1, $2)
+            RETURNING id
+            "#,
+        )
+        .bind(provider_id)
+        .bind(cursor)
+        .fetch_one(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+
+        Ok(attempt_id)
+    }
+
+    async fn record_request_outcome(
+        &self,
+        attempt_id: Uuid,
+        outcome: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE provider_request_attempts SET outcome = $2 WHERE id = $1")
+            .bind(attempt_id)
+            .bind(outcome)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
     }
 
     async fn persist_page(

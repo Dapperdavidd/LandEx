@@ -123,7 +123,17 @@ impl ProviderPage {
 pub trait PropertyProvider: Send + Sync {
     fn slug(&self) -> &'static str;
 
+    fn request_budget(&self) -> Option<RequestBudget> {
+        None
+    }
+
     async fn fetch_page(&self, cursor: Option<&str>) -> Result<ProviderPage, IngestionError>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RequestBudget {
+    pub max_attempts: u16,
+    pub window_days: u16,
 }
 
 #[derive(Debug, Error)]
@@ -145,6 +155,15 @@ pub enum IngestionError {
     },
     #[error("provider returned a repeated pagination cursor")]
     RepeatedCursor,
+    #[error(
+        "{provider} request guard stopped the request: {attempts} attempts already recorded in the last {window_days} days (limit {limit})"
+    )]
+    RequestLimitReached {
+        provider: String,
+        attempts: i64,
+        limit: u16,
+        window_days: u16,
+    },
     #[error("database operation failed: {0}")]
     Database(#[from] sqlx::Error),
 }

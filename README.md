@@ -48,6 +48,8 @@ cargo run --bin ingest-rentcast
 
 `RENTCAST_MAX_PAGES` defaults to `1` so development runs do not unexpectedly consume a large API allowance. Each request uses RentCast's maximum page size of 500 listings to make efficient use of the monthly request quota. Do not run the ingestion command casually: every execution makes at least one billable API request.
 
+LandEX records every RentCast attempt before sending it and enforces a hard ceiling of 45 attempts in any rolling 32-day window. This intentionally stays below the provider's 50-request monthly allowance. The guard must never be bypassed; requests made outside LandEX are not visible to it and should be avoided.
+
 ## Verification
 
 Run the fast backend suite with `cargo test`. PostgreSQL-backed ingestion tests are enabled with `cargo test --features integration-tests` and run automatically in continuous integration.

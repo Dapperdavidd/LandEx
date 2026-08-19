@@ -6,7 +6,7 @@ use landex_api::{
     domain::{ListingStatus, ListingType, LocationKind, PropertyType},
     ingestion::{
         IngestionError, IngestionService, PropertyProvider, ProviderListing, ProviderLocation,
-        ProviderPage, ProviderProperty,
+        ProviderPage, ProviderProperty, RequestBudget,
     },
 };
 use rust_decimal::Decimal;
@@ -19,6 +19,13 @@ struct FixtureProvider;
 impl PropertyProvider for FixtureProvider {
     fn slug(&self) -> &'static str {
         "fixture-provider"
+    }
+
+    fn request_budget(&self) -> Option<RequestBudget> {
+        Some(RequestBudget {
+            max_attempts: 1,
+            window_days: 32,
+        })
     }
 
     async fn fetch_page(&self, _cursor: Option<&str>) -> Result<ProviderPage, IngestionError> {
@@ -131,4 +138,16 @@ async fn ingests_an_unordered_provider_page_atomically(pool: PgPool) {
     assert_eq!(property_count, 1);
     assert_eq!(listing_count, 1);
     assert_eq!(observation_count, 1);
+
+    let request_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_request_attempts")
+        .fetch_one(&pool)
+        .await
+        .expect("count provider requests");
+    assert_eq!(request_count, 1);
+
+    let second_run = IngestionService::new(pool).run(&FixtureProvider, 1).await;
+    assert!(matches!(
+        second_run,
+        Err(IngestionError::RequestLimitReached { limit: 1, .. })
+    ));
 }
