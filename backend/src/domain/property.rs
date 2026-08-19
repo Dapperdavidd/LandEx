@@ -1,0 +1,89 @@
+use chrono::{DateTime, NaiveDate, Utc};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use uuid::Uuid;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropertyType {
+    Apartment,
+    House,
+    Commercial,
+    Land,
+    Hotel,
+    Retail,
+    Industrial,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ListingType {
+    Sale,
+    Rent,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ListingStatus {
+    Active,
+    Pending,
+    Sold,
+    Rented,
+    Withdrawn,
+    Expired,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Property {
+    pub id: Uuid,
+    pub location_id: Uuid,
+    pub property_type: PropertyType,
+    pub address_line: Option<String>,
+    pub postal_code: Option<String>,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub bedrooms: Option<Decimal>,
+    pub bathrooms: Option<Decimal>,
+    pub area_sqm: Option<Decimal>,
+    pub lot_size_sqm: Option<Decimal>,
+    pub year_built: Option<i16>,
+    pub attributes: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Listing {
+    pub id: Uuid,
+    pub property_id: Uuid,
+    pub provider_id: Uuid,
+    pub source_id: String,
+    pub listing_type: ListingType,
+    pub status: ListingStatus,
+    pub price: Decimal,
+    pub currency: String,
+    pub listed_at: Option<DateTime<Utc>>,
+    pub removed_at: Option<DateTime<Utc>>,
+    pub source_url: Option<String>,
+    pub raw_payload: Value,
+    pub first_seen_at: DateTime<Utc>,
+    pub last_seen_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PropertyObservation {
+    pub id: Uuid,
+    pub property_id: Uuid,
+    pub provider_id: Option<Uuid>,
+    pub observed_on: NaiveDate,
+    pub asking_price: Option<Decimal>,
+    pub rental_price_monthly: Option<Decimal>,
+    pub estimated_value: Option<Decimal>,
+    pub currency: String,
+    pub days_on_market: Option<i32>,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+}
