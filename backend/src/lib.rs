@@ -1,6 +1,7 @@
 pub mod config;
 pub mod domain;
 pub mod error;
+pub mod ingestion;
 pub mod repository;
 pub mod routes;
 pub mod state;
