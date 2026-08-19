@@ -1,1 +1,3 @@
 .workspace.md
+backend/.env
+backend/target/

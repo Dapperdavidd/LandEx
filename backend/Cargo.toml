@@ -1,0 +1,17 @@
+[package]
+name = "landex-api"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4"
+dotenvy = "0.15"
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-actix-web = "0.7"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+serde_json = "1"
