@@ -16,6 +16,8 @@ The backend lives in `backend/`.
 2. Set `DATABASE_URL` to a PostgreSQL database.
 3. Run `cargo run` from `backend/`.
 
+The API verifies its database connection and applies pending migrations before it starts accepting requests.
+
 The initial service endpoints are:
 
 - `GET /api/v1/health` — confirms the API process is running.

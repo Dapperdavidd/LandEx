@@ -19,7 +19,11 @@ async fn main() -> io::Result<()> {
 
     let config = Config::from_env().map_err(io::Error::other)?;
     let address = config.server_address();
-    let state = app_data(AppState::new(&config).map_err(io::Error::other)?);
+    let state = app_data(
+        AppState::initialize(&config)
+            .await
+            .map_err(io::Error::other)?,
+    );
 
     info!(?address, "starting LandEX API");
 
