@@ -3,6 +3,9 @@ name = "landex-api"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+integration-tests = []
+
 [dependencies]
 actix-web = "4"
 async-trait = "0.1"

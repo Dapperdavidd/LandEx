@@ -22,6 +22,16 @@ impl LocationKind {
             Self::Neighborhood => "neighborhood",
         }
     }
+
+    pub const fn hierarchy_depth(self) -> u8 {
+        match self {
+            Self::Country => 0,
+            Self::Region => 1,
+            Self::City => 2,
+            Self::District => 3,
+            Self::Neighborhood => 4,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -76,7 +76,10 @@ impl IngestionService {
         let mut location_ids = HashMap::new();
         let mut property_ids = HashMap::new();
 
-        for location in &page.locations {
+        let mut locations = page.locations.iter().collect::<Vec<_>>();
+        locations.sort_by_key(|location| location.kind.hierarchy_depth());
+
+        for location in locations {
             let location_id =
                 persist_location(&mut transaction, provider_id, location, &location_ids).await?;
             location_ids.insert(location.source_id.clone(), location_id);

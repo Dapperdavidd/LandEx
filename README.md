@@ -16,6 +16,12 @@ The backend lives in `backend/`.
 2. Set `DATABASE_URL` to a PostgreSQL database.
 3. Run `cargo run` from `backend/`.
 
+For local development, PostgreSQL 16 can be started from the repository root with:
+
+```sh
+docker compose up -d postgres
+```
+
 The API verifies its database connection and applies pending migrations before it starts accepting requests.
 
 The initial service endpoints are:
@@ -41,3 +47,7 @@ cargo run --bin ingest-rentcast
 ```
 
 `RENTCAST_MAX_PAGES` defaults to `1` so development runs do not unexpectedly consume a large API allowance.
+
+## Verification
+
+Run the fast backend suite with `cargo test`. PostgreSQL-backed ingestion tests are enabled with `cargo test --features integration-tests` and run automatically in continuous integration.
