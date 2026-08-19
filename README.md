@@ -22,7 +22,11 @@ The initial service endpoints are:
 
 - `GET /api/v1/health` — confirms the API process is running.
 - `GET /api/v1/ready` — confirms the API can reach PostgreSQL.
+- `GET /api/v1/markets` — searches normalized real-estate markets and their latest metrics.
+- `GET /api/v1/markets/{id}` — returns a market and its metric history.
 - `GET /api/v1/properties` — searches active normalized listings.
 - `GET /api/v1/properties/{id}` — returns the latest active listing for a property.
 
 Property search supports `country_code`, `location_id`, `property_type`, `listing_type`, `min_price`, `max_price`, `currency`, `limit`, and `offset` query parameters.
+
+Market search supports `country_code`, `location_id`, `property_type`, `currency`, `limit`, and `offset`. Market detail accepts `history_limit`.

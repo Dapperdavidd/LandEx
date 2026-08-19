@@ -14,6 +14,8 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
         web::scope("/api/v1")
             .service(routes::health::health)
             .service(routes::health::readiness)
+            .service(routes::markets::list_markets)
+            .service(routes::markets::get_market)
             .service(routes::properties::list_properties)
             .service(routes::properties::get_property),
     );
