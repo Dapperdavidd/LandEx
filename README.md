@@ -31,3 +31,13 @@ The initial service endpoints are:
 Property search supports `country_code`, `location_id`, `property_type`, `listing_type`, `min_price`, `max_price`, `currency`, `limit`, and `offset` query parameters.
 
 Market search supports `country_code`, `location_id`, `property_type`, `currency`, `limit`, and `offset`. Market detail accepts `history_limit`.
+
+### RentCast ingestion
+
+The RentCast adapter imports US sale and long-term rental listings into the canonical LandEX schema. Configure `RENTCAST_API_KEY` and one geographic scope in `backend/.env`: a state, a city and state, or a ZIP code. Then run:
+
+```sh
+cargo run --bin ingest-rentcast
+```
+
+`RENTCAST_MAX_PAGES` defaults to `1` so development runs do not unexpectedly consume a large API allowance.

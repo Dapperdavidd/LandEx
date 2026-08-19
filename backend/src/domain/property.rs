@@ -52,6 +52,7 @@ impl ListingType {
 #[serde(rename_all = "snake_case")]
 pub enum ListingStatus {
     Active,
+    Inactive,
     Pending,
     Sold,
     Rented,
@@ -64,6 +65,7 @@ impl ListingStatus {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
+            Self::Inactive => "inactive",
             Self::Pending => "pending",
             Self::Sold => "sold",
             Self::Rented => "rented",
