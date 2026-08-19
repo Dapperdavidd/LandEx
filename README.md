@@ -50,6 +50,16 @@ cargo run --bin ingest-rentcast
 
 LandEX records every RentCast attempt before sending it and enforces a hard ceiling of 45 attempts in any rolling 32-day window. This intentionally stays below the provider's 50-request monthly allowance. The guard must never be bypassed; requests made outside LandEX are not visible to it and should be avoided.
 
+### Market aggregation
+
+Generate or refresh market observations from normalized active listings with:
+
+```sh
+cargo run --bin refresh-markets
+```
+
+The aggregation produces median sale price, median monthly rent, gross rental yield, active inventory, and average days on market without depending on any one external provider.
+
 ## Verification
 
 Run the fast backend suite with `cargo test`. PostgreSQL-backed ingestion tests are enabled with `cargo test --features integration-tests` and run automatically in continuous integration.

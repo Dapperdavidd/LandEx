@@ -3,6 +3,7 @@ pub mod domain;
 pub mod error;
 pub mod ingestion;
 pub mod investment;
+pub mod market;
 pub mod repository;
 pub mod routes;
 pub mod state;

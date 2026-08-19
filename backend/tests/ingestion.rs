@@ -8,6 +8,7 @@ use landex_api::{
         IngestionError, IngestionService, PropertyProvider, ProviderListing, ProviderLocation,
         ProviderPage, ProviderProperty, RequestBudget,
     },
+    market::MarketAggregationService,
 };
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -87,19 +88,34 @@ impl PropertyProvider for FixtureProvider {
                 attributes: json!({}),
                 raw_payload: json!({ "fixture": true }),
             }],
-            listings: vec![ProviderListing {
-                source_id: "listing:1".to_owned(),
-                property_source_id: "property:1".to_owned(),
-                listing_type: ListingType::Sale,
-                status: ListingStatus::Active,
-                price: Decimal::new(250_000_000, 0),
-                currency: "NGN".to_owned(),
-                listed_at: None,
-                removed_at: None,
-                source_url: None,
-                observed_at: Utc::now(),
-                raw_payload: json!({ "fixture": true }),
-            }],
+            listings: vec![
+                ProviderListing {
+                    source_id: "listing:sale:1".to_owned(),
+                    property_source_id: "property:1".to_owned(),
+                    listing_type: ListingType::Sale,
+                    status: ListingStatus::Active,
+                    price: Decimal::new(250_000_000, 0),
+                    currency: "NGN".to_owned(),
+                    listed_at: Some(Utc::now()),
+                    removed_at: None,
+                    source_url: None,
+                    observed_at: Utc::now(),
+                    raw_payload: json!({ "fixture": true }),
+                },
+                ProviderListing {
+                    source_id: "listing:rent:1".to_owned(),
+                    property_source_id: "property:1".to_owned(),
+                    listing_type: ListingType::Rent,
+                    status: ListingStatus::Active,
+                    price: Decimal::new(2_000_000, 0),
+                    currency: "NGN".to_owned(),
+                    listed_at: Some(Utc::now()),
+                    removed_at: None,
+                    source_url: None,
+                    observed_at: Utc::now(),
+                    raw_payload: json!({ "fixture": true }),
+                },
+            ],
             next_cursor: None,
         })
     }
@@ -115,7 +131,7 @@ async fn ingests_an_unordered_provider_page_atomically(pool: PgPool) {
     assert_eq!(report.pages, 1);
     assert_eq!(report.locations, 3);
     assert_eq!(report.properties, 1);
-    assert_eq!(report.listings, 1);
+    assert_eq!(report.listings, 2);
 
     let location_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM locations")
         .fetch_one(&pool)
@@ -136,7 +152,7 @@ async fn ingests_an_unordered_provider_page_atomically(pool: PgPool) {
 
     assert_eq!(location_count, 3);
     assert_eq!(property_count, 1);
-    assert_eq!(listing_count, 1);
+    assert_eq!(listing_count, 2);
     assert_eq!(observation_count, 1);
 
     let request_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM provider_request_attempts")
@@ -145,9 +161,36 @@ async fn ingests_an_unordered_provider_page_atomically(pool: PgPool) {
         .expect("count provider requests");
     assert_eq!(request_count, 1);
 
-    let second_run = IngestionService::new(pool).run(&FixtureProvider, 1).await;
+    let second_run = IngestionService::new(pool.clone())
+        .run(&FixtureProvider, 1)
+        .await;
     assert!(matches!(
         second_run,
         Err(IngestionError::RequestLimitReached { limit: 1, .. })
     ));
+
+    let aggregation = MarketAggregationService::new(pool.clone())
+        .refresh(Utc::now().date_naive())
+        .await
+        .expect("aggregate markets");
+    assert_eq!(aggregation.markets_affected, 1);
+    assert_eq!(aggregation.observations_upserted, 1);
+
+    let metrics: (Decimal, Decimal, Decimal, i32) = sqlx::query_as(
+        r#"
+        SELECT
+            median_sale_price,
+            median_rent_monthly,
+            gross_yield_percent,
+            active_inventory
+        FROM market_observations
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("market metrics");
+    assert_eq!(metrics.0, Decimal::new(250_000_000, 0));
+    assert_eq!(metrics.1, Decimal::new(2_000_000, 0));
+    assert_eq!(metrics.2.round_dp(2), Decimal::new(960, 2));
+    assert_eq!(metrics.3, 2);
 }
