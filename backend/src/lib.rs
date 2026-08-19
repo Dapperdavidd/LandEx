@@ -19,8 +19,11 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::markets::list_markets)
             .service(routes::markets::get_market)
             .service(routes::investment::analyze_investment)
+            .service(routes::locations::list_locations)
+            .service(routes::locations::get_location)
             .service(routes::properties::list_properties)
-            .service(routes::properties::get_property),
+            .service(routes::properties::get_property)
+            .service(routes::properties::get_property_history),
     );
 }
 

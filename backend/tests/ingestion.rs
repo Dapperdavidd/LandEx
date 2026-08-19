@@ -9,6 +9,11 @@ use landex_api::{
         ProviderPage, ProviderProperty, RequestBudget,
     },
     market::MarketAggregationService,
+    repository::{
+        location::{LocationRepository, LocationSearchFilters},
+        market::{MarketRepository, MarketSearchFilters},
+        property::PropertyRepository,
+    },
 };
 use rust_decimal::Decimal;
 use serde_json::json;
@@ -193,4 +198,54 @@ async fn ingests_an_unordered_provider_page_atomically(pool: PgPool) {
     assert_eq!(metrics.1, Decimal::new(2_000_000, 0));
     assert_eq!(metrics.2.round_dp(2), Decimal::new(960, 2));
     assert_eq!(metrics.3, 2);
+
+    let locations = LocationRepository::new(pool.clone())
+        .search(&LocationSearchFilters {
+            query: Some("lagos".to_owned()),
+            country_code: Some("NG".to_owned()),
+            kind: Some("city".to_owned()),
+            limit: 10,
+        })
+        .await
+        .expect("search locations");
+    assert_eq!(locations.len(), 1);
+    assert_eq!(locations[0].property_count, 1);
+
+    let location = LocationRepository::new(pool.clone())
+        .find_with_hierarchy(locations[0].id)
+        .await
+        .expect("load hierarchy")
+        .expect("location exists");
+    assert_eq!(location.hierarchy.len(), 3);
+    assert_eq!(location.hierarchy[0].kind, "country");
+    assert_eq!(location.location.kind, "city");
+
+    let markets = MarketRepository::new(pool.clone())
+        .search(&MarketSearchFilters {
+            country_code: Some("NG".to_owned()),
+            location_id: None,
+            property_type: Some("apartment".to_owned()),
+            currency: Some("NGN".to_owned()),
+            limit: 10,
+            offset: 0,
+        })
+        .await
+        .expect("search markets");
+    assert_eq!(markets.total, 1);
+    assert_eq!(markets.items.len(), 1);
+
+    let property_id = sqlx::query_scalar("SELECT id FROM properties LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .expect("property id");
+    let history = PropertyRepository::new(pool)
+        .history(property_id, 10)
+        .await
+        .expect("property history");
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].asking_price, Some(Decimal::new(250_000_000, 0)));
+    assert_eq!(
+        history[0].rental_price_monthly,
+        Some(Decimal::new(2_000_000, 0))
+    );
 }

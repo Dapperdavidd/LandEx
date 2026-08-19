@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
@@ -108,6 +108,32 @@ impl PropertyRepository {
         .await?;
 
         Ok(row.map(PropertyListItem::from))
+    }
+
+    pub async fn history(
+        &self,
+        id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<PropertyHistoryPoint>, sqlx::Error> {
+        sqlx::query_as(
+            r#"
+            SELECT
+                observed_on,
+                asking_price,
+                rental_price_monthly,
+                estimated_value,
+                currency,
+                days_on_market
+            FROM property_observations
+            WHERE property_id = $1
+            ORDER BY observed_on DESC, created_at DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
     }
 }
 
@@ -237,4 +263,14 @@ pub struct PropertyPage {
     pub total: i64,
     pub limit: i64,
     pub offset: i64,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct PropertyHistoryPoint {
+    pub observed_on: NaiveDate,
+    pub asking_price: Option<Decimal>,
+    pub rental_price_monthly: Option<Decimal>,
+    pub estimated_value: Option<Decimal>,
+    pub currency: String,
+    pub days_on_market: Option<i32>,
 }

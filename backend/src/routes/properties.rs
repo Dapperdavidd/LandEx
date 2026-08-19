@@ -11,6 +11,8 @@ use crate::{
 
 const DEFAULT_LIMIT: i64 = 20;
 const MAX_LIMIT: i64 = 100;
+const DEFAULT_HISTORY_LIMIT: i64 = 60;
+const MAX_HISTORY_LIMIT: i64 = 500;
 
 #[derive(Debug, Deserialize)]
 pub struct PropertySearchQuery {
@@ -23,6 +25,11 @@ pub struct PropertySearchQuery {
     currency: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PropertyHistoryQuery {
+    limit: Option<i64>,
 }
 
 impl PropertySearchQuery {
@@ -101,6 +108,36 @@ pub async fn get_property(
         .ok_or(ApiError::NotFound)?;
 
     Ok(HttpResponse::Ok().json(property))
+}
+
+#[get("/properties/{id}/history")]
+pub async fn get_property_history(
+    state: web::Data<AppState>,
+    id: web::Path<Uuid>,
+    query: web::Query<PropertyHistoryQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let limit = query.limit.unwrap_or(DEFAULT_HISTORY_LIMIT);
+    if !(1..=MAX_HISTORY_LIMIT).contains(&limit) {
+        return Err(ApiError::InvalidRequest(format!(
+            "limit must be between 1 and {MAX_HISTORY_LIMIT}"
+        )));
+    }
+
+    let repository = PropertyRepository::new(state.database.clone());
+    if repository
+        .find_by_id(*id)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?
+        .is_none()
+    {
+        return Err(ApiError::NotFound);
+    }
+    let history = repository
+        .history(*id, limit)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?;
+
+    Ok(HttpResponse::Ok().json(history))
 }
 
 fn normalize_code(

@@ -30,8 +30,11 @@ The initial service endpoints are:
 - `GET /api/v1/ready` — confirms the API can reach PostgreSQL.
 - `GET /api/v1/markets` — searches normalized real-estate markets and their latest metrics.
 - `GET /api/v1/markets/{id}` — returns a market and its metric history.
+- `GET /api/v1/locations` — searches normalized global locations.
+- `GET /api/v1/locations/{id}` — returns a location and its geographic hierarchy.
 - `GET /api/v1/properties` — searches active normalized listings.
 - `GET /api/v1/properties/{id}` — returns the latest active listing for a property.
+- `GET /api/v1/properties/{id}/history` — returns property price, rent, valuation, and market-time observations.
 - `POST /api/v1/analysis/investment` — calculates explainable property investment metrics and projections.
 
 Property search supports `country_code`, `location_id`, `property_type`, `listing_type`, `min_price`, `max_price`, `currency`, `limit`, and `offset` query parameters.
