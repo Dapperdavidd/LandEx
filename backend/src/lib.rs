@@ -1,6 +1,7 @@
 pub mod config;
 pub mod domain;
 pub mod error;
+pub mod repository;
 pub mod routes;
 pub mod state;
 
@@ -11,7 +12,9 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
     config.service(
         web::scope("/api/v1")
             .service(routes::health::health)
-            .service(routes::health::readiness),
+            .service(routes::health::readiness)
+            .service(routes::properties::list_properties)
+            .service(routes::properties::get_property),
     );
 }
 
