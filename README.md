@@ -46,7 +46,7 @@ The RentCast adapter imports US sale and long-term rental listings into the cano
 cargo run --bin ingest-rentcast
 ```
 
-`RENTCAST_MAX_PAGES` defaults to `1` so development runs do not unexpectedly consume a large API allowance.
+`RENTCAST_MAX_PAGES` defaults to `1` so development runs do not unexpectedly consume a large API allowance. Each request uses RentCast's maximum page size of 500 listings to make efficient use of the monthly request quota. Do not run the ingestion command casually: every execution makes at least one billable API request.
 
 ## Verification
 

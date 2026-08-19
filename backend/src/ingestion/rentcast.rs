@@ -14,7 +14,7 @@ use super::{
 use crate::domain::{ListingStatus, ListingType, LocationKind, PropertyType};
 
 const DEFAULT_BASE_URL: &str = "https://api.rentcast.io/v1/";
-const DEFAULT_PAGE_SIZE: u16 = 100;
+const DEFAULT_PAGE_SIZE: u16 = 500;
 const MAX_PAGE_SIZE: u16 = 500;
 const SQFT_TO_SQM: Decimal = Decimal::from_parts(9_290_304, 0, 0, false, 8);
 
