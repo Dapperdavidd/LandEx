@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     error::ApiError,
+    investment::PropertyScoreInputs,
     repository::{
         location_intelligence::LocationIntelligenceRepository,
         property::{PropertyRepository, PropertySearchFilters},
@@ -184,6 +185,22 @@ pub async fn get_property_location_intelligence(
         .ok_or(ApiError::NotFound)?;
 
     Ok(HttpResponse::Ok().json(intelligence))
+}
+
+#[get("/properties/{id}/score")]
+pub async fn get_property_score(
+    state: web::Data<AppState>,
+    id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let inputs: PropertyScoreInputs = PropertyRepository::new(state.database.clone())
+        .score_inputs(id.into_inner())
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let score = inputs
+        .calculate()
+        .map_err(|error| ApiError::InvalidRequest(error.to_string()))?;
+    Ok(HttpResponse::Ok().json(score))
 }
 
 fn normalize_code(

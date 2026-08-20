@@ -1,3 +1,4 @@
+use crate::investment::{LocationFeatureCounts, PropertyScoreInputs};
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -138,6 +139,41 @@ impl PropertyRepository {
         .fetch_all(&self.pool)
         .await
     }
+
+    pub async fn score_inputs(&self, id: Uuid) -> Result<Option<PropertyScoreInputs>, sqlx::Error> {
+        let row = sqlx::query_as::<_, PropertyScoreInputRow>(
+            r#"
+            SELECT
+                (SELECT l.price FROM listings l WHERE l.property_id = p.id AND l.status = 'active' AND l.listing_type = 'sale' ORDER BY l.last_seen_at DESC LIMIT 1) AS sale_price,
+                (SELECT o.rental_price_monthly FROM property_observations o WHERE o.property_id = p.id AND o.rental_price_monthly IS NOT NULL ORDER BY o.observed_on DESC, o.created_at DESC LIMIT 1) AS monthly_rent,
+                (SELECT o.days_on_market FROM property_observations o WHERE o.property_id = p.id AND o.days_on_market IS NOT NULL ORDER BY o.observed_on DESC, o.created_at DESC LIMIT 1) AS days_on_market,
+                (SELECT mo.annual_growth_percent FROM markets m JOIN market_observations mo ON mo.market_id = m.id WHERE m.location_id = p.location_id AND (m.property_type = p.property_type OR m.property_type IS NULL) AND mo.annual_growth_percent IS NOT NULL ORDER BY (m.property_type IS NOT NULL) DESC, mo.observed_on DESC, mo.created_at DESC LIMIT 1) AS annual_growth_percent,
+                COUNT(pnf.feature_id)::BIGINT AS feature_count,
+                COUNT(pnf.feature_id) FILTER (WHERE nf.category = 'transport')::BIGINT AS transport,
+                COUNT(pnf.feature_id) FILTER (WHERE nf.category = 'education')::BIGINT AS education,
+                COUNT(pnf.feature_id) FILTER (WHERE nf.category = 'healthcare')::BIGINT AS healthcare,
+                COUNT(pnf.feature_id) FILTER (WHERE nf.category = 'commerce')::BIGINT AS commerce
+            FROM properties p
+            LEFT JOIN property_nearby_features pnf ON pnf.property_id = p.id AND pnf.expires_at > NOW()
+            LEFT JOIN nearby_features nf ON nf.id = pnf.feature_id
+            WHERE p.id = $1
+            GROUP BY p.id
+            "#,
+        ).bind(id).fetch_optional(&self.pool).await?;
+        Ok(row.map(|row| PropertyScoreInputs {
+            gross_rental_yield_percent: row.sale_price.zip(row.monthly_rent).map(
+                |(price, rent)| (rent * Decimal::from(12) * Decimal::from(100) / price).round_dp(4),
+            ),
+            annual_growth_percent: row.annual_growth_percent,
+            days_on_market: row.days_on_market.map(Decimal::from),
+            location: (row.feature_count > 0).then_some(LocationFeatureCounts {
+                transport: row.transport.max(0) as u16,
+                education: row.education.max(0) as u16,
+                healthcare: row.healthcare.max(0) as u16,
+                commerce: row.commerce.max(0) as u16,
+            }),
+        }))
+    }
 }
 
 fn apply_filters<'a>(query: &mut QueryBuilder<'a, Postgres>, filters: &'a PropertySearchFilters) {
@@ -208,6 +244,19 @@ struct PropertyListRow {
     source_url: Option<String>,
     last_seen_at: DateTime<Utc>,
     total_count: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct PropertyScoreInputRow {
+    sale_price: Option<Decimal>,
+    monthly_rent: Option<Decimal>,
+    days_on_market: Option<i32>,
+    annual_growth_percent: Option<Decimal>,
+    feature_count: i64,
+    transport: i64,
+    education: i64,
+    healthcare: i64,
+    commerce: i64,
 }
 
 #[derive(Debug, Serialize)]
