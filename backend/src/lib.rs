@@ -23,6 +23,8 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::fx::convert)
             .service(routes::markets::list_markets)
             .service(routes::markets::get_market)
+            .service(routes::notifications::list_notifications)
+            .service(routes::notifications::mark_notification_read)
             .service(routes::investment::analyze_investment)
             .service(routes::investment::analyze_shortlet)
             .service(routes::investment::score_property)
