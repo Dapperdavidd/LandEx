@@ -1,0 +1,122 @@
+use actix_web::{HttpRequest, HttpResponse, get, post, web};
+use rust_decimal::Decimal;
+use serde::Deserialize;
+use tracing::error;
+use uuid::Uuid;
+
+use crate::{
+    error::ApiError, repository::paper_account::PaperAccountRepository, routes::auth::authenticate,
+    state::AppState,
+};
+
+const DEFAULT_DEMO_CASH: Decimal = Decimal::from_parts(100_000, 0, 0, false, 0);
+
+#[derive(Debug, Deserialize)]
+pub struct CreatePaperAccountRequest {
+    #[serde(default = "default_account_name")]
+    name: String,
+    #[serde(default = "default_currency")]
+    base_currency: String,
+    #[serde(default = "default_demo_cash", with = "rust_decimal::serde::str")]
+    starting_cash: Decimal,
+}
+
+#[get("/paper-accounts")]
+pub async fn list_paper_accounts(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let accounts = PaperAccountRepository::new(state.database.clone())
+        .list(user.id)
+        .await
+        .map_err(database_error)?;
+    Ok(HttpResponse::Ok().json(accounts))
+}
+
+#[post("/paper-accounts")]
+pub async fn create_paper_account(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    body: web::Json<CreatePaperAccountRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let name = body.name.trim();
+    let currency = body.base_currency.trim().to_uppercase();
+    validate(name, &currency, body.starting_cash)?;
+
+    let account = PaperAccountRepository::new(state.database.clone())
+        .create(user.id, name, &currency, body.starting_cash)
+        .await
+        .map_err(map_create_error)?;
+    Ok(HttpResponse::Created().json(account))
+}
+
+#[get("/paper-accounts/{account_id}")]
+pub async fn get_paper_account(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let account = PaperAccountRepository::new(state.database.clone())
+        .detail(user.id, account_id.into_inner())
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(account))
+}
+
+fn validate(name: &str, currency: &str, starting_cash: Decimal) -> Result<(), ApiError> {
+    if name.is_empty() || name.chars().count() > 100 {
+        return Err(ApiError::InvalidRequest(
+            "name must contain between 1 and 100 characters".to_owned(),
+        ));
+    }
+    if currency.len() != 3
+        || !currency
+            .chars()
+            .all(|character| character.is_ascii_uppercase())
+    {
+        return Err(ApiError::InvalidRequest(
+            "base_currency must be a three-letter ISO currency code".to_owned(),
+        ));
+    }
+    if starting_cash <= Decimal::ZERO || starting_cash > Decimal::new(1_000_000_000, 0) {
+        return Err(ApiError::InvalidRequest(
+            "starting_cash must be greater than zero and no more than 1000000000".to_owned(),
+        ));
+    }
+    if starting_cash.scale() > 4 {
+        return Err(ApiError::InvalidRequest(
+            "starting_cash supports at most four decimal places".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn default_account_name() -> String {
+    "Demo Portfolio".to_owned()
+}
+
+fn default_currency() -> String {
+    "USD".to_owned()
+}
+
+fn default_demo_cash() -> Decimal {
+    DEFAULT_DEMO_CASH
+}
+
+fn map_create_error(error: sqlx::Error) -> ApiError {
+    if let sqlx::Error::Database(database_error) = &error
+        && database_error.is_unique_violation()
+    {
+        return ApiError::Conflict("a paper account with this name already exists".to_owned());
+    }
+    database_error(error)
+}
+
+fn database_error(error: sqlx::Error) -> ApiError {
+    error!(?error, "paper account database operation failed");
+    ApiError::Internal
+}

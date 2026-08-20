@@ -34,7 +34,10 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::watchlists::create_watchlist)
             .service(routes::watchlists::get_watchlist)
             .service(routes::watchlists::add_watchlist_item)
-            .service(routes::watchlists::remove_watchlist_item),
+            .service(routes::watchlists::remove_watchlist_item)
+            .service(routes::paper_accounts::list_paper_accounts)
+            .service(routes::paper_accounts::create_paper_account)
+            .service(routes::paper_accounts::get_paper_account),
     );
 }
 
