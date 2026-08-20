@@ -25,6 +25,7 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::fx::get_rate)
             .service(routes::fx::convert)
             .service(routes::markets::list_markets)
+            .service(routes::markets::compare_markets)
             .service(routes::markets::get_market)
             .service(routes::markets::get_market_score)
             .service(routes::markets::get_market_score_history)
