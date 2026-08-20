@@ -29,7 +29,12 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::auth::login)
             .service(routes::auth::refresh)
             .service(routes::auth::logout)
-            .service(routes::auth::me),
+            .service(routes::auth::me)
+            .service(routes::watchlists::list_watchlists)
+            .service(routes::watchlists::create_watchlist)
+            .service(routes::watchlists::get_watchlist)
+            .service(routes::watchlists::add_watchlist_item)
+            .service(routes::watchlists::remove_watchlist_item),
     );
 }
 
