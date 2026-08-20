@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod fx;
 pub mod health;
 pub mod investment;
 pub mod locations;

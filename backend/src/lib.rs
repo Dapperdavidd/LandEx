@@ -2,6 +2,7 @@ pub mod auth;
 pub mod config;
 pub mod domain;
 pub mod error;
+pub mod fx;
 pub mod ingestion;
 pub mod investment;
 pub mod market;
@@ -17,6 +18,8 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
         web::scope("/api/v1")
             .service(routes::health::health)
             .service(routes::health::readiness)
+            .service(routes::fx::get_rate)
+            .service(routes::fx::convert)
             .service(routes::markets::list_markets)
             .service(routes::markets::get_market)
             .service(routes::investment::analyze_investment)
