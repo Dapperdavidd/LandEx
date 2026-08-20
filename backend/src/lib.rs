@@ -8,6 +8,7 @@ pub mod ingestion;
 pub mod investment;
 pub mod location_intelligence;
 pub mod market;
+pub mod paper;
 pub mod repository;
 pub mod routes;
 pub mod scoring;
@@ -59,6 +60,8 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::paper_accounts::create_paper_account)
             .service(routes::paper_accounts::get_paper_account)
             .service(routes::paper_accounts::get_paper_account_performance)
+            .service(routes::paper_accounts::get_paper_account_allocation)
+            .service(routes::paper_accounts::get_paper_account_performance_history)
             .service(routes::paper_accounts::list_paper_account_trades)
             .service(routes::paper_accounts::execute_paper_order),
     );

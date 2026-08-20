@@ -120,6 +120,38 @@ async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
         "apartment"
     );
 
+    let allocation = test::TestRequest::get()
+        .uri(&format!("/api/v1/paper-accounts/{account_id}/allocation"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
+        .to_request();
+    let allocation_response = test::call_service(&app, allocation).await;
+    assert_eq!(allocation_response.status(), 200);
+    let allocation_body: Value = test::read_body_json(allocation_response).await;
+    assert_eq!(allocation_body["by_country"][0]["label"], "US");
+    assert_eq!(allocation_body["by_country"][0]["percentage"], "100");
+
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users WHERE primary_email = $1")
+        .bind("portfolio@example.com")
+        .fetch_one(&pool)
+        .await
+        .expect("user id");
+    let account_uuid = Uuid::parse_str(account_id).expect("account uuid");
+    landex_api::repository::paper_account::PaperAccountRepository::new(pool.clone())
+        .record_snapshot(user_id, account_uuid)
+        .await
+        .expect("record snapshot")
+        .expect("snapshot");
+    let history = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/paper-accounts/{account_id}/performance-history"
+        ))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
+        .to_request();
+    let history_response = test::call_service(&app, history).await;
+    assert_eq!(history_response.status(), 200);
+    let history_body: Value = test::read_body_json(history_response).await;
+    assert_eq!(history_body[0]["total_value"], "103000.00000000");
+
     let trades = test::TestRequest::get()
         .uri(&format!("/api/v1/paper-accounts/{account_id}/trades"))
         .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))

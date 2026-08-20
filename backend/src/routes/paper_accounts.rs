@@ -94,6 +94,36 @@ pub async fn get_paper_account_performance(
     Ok(HttpResponse::Ok().json(performance))
 }
 
+#[get("/paper-accounts/{account_id}/allocation")]
+pub async fn get_paper_account_allocation(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let allocation = PaperAccountRepository::new(state.database.clone())
+        .allocation(user.id, account_id.into_inner())
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(allocation))
+}
+
+#[get("/paper-accounts/{account_id}/performance-history")]
+pub async fn get_paper_account_performance_history(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let history = PaperAccountRepository::new(state.database.clone())
+        .history(user.id, account_id.into_inner(), 365)
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(history))
+}
+
 #[get("/paper-accounts/{account_id}/trades")]
 pub async fn list_paper_account_trades(
     state: web::Data<AppState>,

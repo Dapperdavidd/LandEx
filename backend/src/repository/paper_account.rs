@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::PgPool;
@@ -124,6 +124,45 @@ pub struct PositionPerformance {
     #[serde(with = "rust_decimal::serde::str")]
     pub return_percent: Decimal,
     pub currency: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PortfolioAllocation {
+    pub account_id: Uuid,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub positions_value: Decimal,
+    pub by_country: Vec<AllocationSlice>,
+    pub by_property_type: Vec<AllocationSlice>,
+    pub unavailable_dimensions: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AllocationSlice {
+    pub label: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub market_value: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub percentage: Decimal,
+}
+
+#[derive(Debug, Serialize, sqlx::FromRow)]
+pub struct PortfolioSnapshot {
+    pub observed_on: NaiveDate,
+    pub base_currency: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub cash_balance: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub positions_value: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_value: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub net_funding: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_pnl: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_return_percent: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub realized_pnl: Decimal,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -411,6 +450,88 @@ impl PaperAccountRepository {
         }))
     }
 
+    pub async fn allocation(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+    ) -> Result<Option<PortfolioAllocation>, sqlx::Error> {
+        let Some(performance) = self.performance(user_id, account_id).await? else {
+            return Ok(None);
+        };
+        let mut countries: HashMap<String, Decimal> = HashMap::new();
+        let mut property_types: HashMap<String, Decimal> = HashMap::new();
+        for position in &performance.positions {
+            *countries.entry(position.country_code.clone()).or_default() += position.market_value;
+            *property_types
+                .entry(position.property_type.clone())
+                .or_default() += position.market_value;
+        }
+        Ok(Some(PortfolioAllocation {
+            account_id,
+            positions_value: performance.positions_value,
+            by_country: allocation_slices(countries, performance.positions_value),
+            by_property_type: allocation_slices(property_types, performance.positions_value),
+            unavailable_dimensions: vec!["strategy".to_owned(), "risk".to_owned()],
+        }))
+    }
+
+    pub async fn history(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+        limit: i64,
+    ) -> Result<Option<Vec<PortfolioSnapshot>>, sqlx::Error> {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM paper_accounts WHERE id = $1 AND user_id = $2)",
+        )
+        .bind(account_id)
+        .bind(user_id)
+        .fetch_one(&self.pool)
+        .await?;
+        if !exists {
+            return Ok(None);
+        }
+        let snapshots = sqlx::query_as(
+            "SELECT observed_on, base_currency, cash_balance, positions_value, total_value, net_funding, total_pnl, total_return_percent, realized_pnl FROM paper_account_snapshots WHERE account_id = $1 ORDER BY observed_on DESC LIMIT $2",
+        )
+        .bind(account_id)
+        .bind(limit.clamp(1, 3650))
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(Some(snapshots))
+    }
+
+    pub async fn record_snapshot(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+    ) -> Result<Option<PortfolioSnapshot>, sqlx::Error> {
+        let Some(performance) = self.performance(user_id, account_id).await? else {
+            return Ok(None);
+        };
+        let snapshot = sqlx::query_as(
+            "INSERT INTO paper_account_snapshots (account_id, observed_on, base_currency, cash_balance, positions_value, total_value, net_funding, total_pnl, total_return_percent, realized_pnl) VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (account_id, observed_on) DO UPDATE SET base_currency = EXCLUDED.base_currency, cash_balance = EXCLUDED.cash_balance, positions_value = EXCLUDED.positions_value, total_value = EXCLUDED.total_value, net_funding = EXCLUDED.net_funding, total_pnl = EXCLUDED.total_pnl, total_return_percent = EXCLUDED.total_return_percent, realized_pnl = EXCLUDED.realized_pnl, updated_at = NOW() RETURNING observed_on, base_currency, cash_balance, positions_value, total_value, net_funding, total_pnl, total_return_percent, realized_pnl",
+        )
+        .bind(account_id)
+        .bind(&performance.base_currency)
+        .bind(performance.cash_balance)
+        .bind(performance.positions_value)
+        .bind(performance.total_value)
+        .bind(performance.net_funding)
+        .bind(performance.total_pnl)
+        .bind(performance.total_return_percent)
+        .bind(performance.realized_pnl)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(Some(snapshot))
+    }
+
+    pub async fn active_account_owners(&self) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+        sqlx::query_as("SELECT user_id, id FROM paper_accounts WHERE status = 'active'")
+            .fetch_all(&self.pool)
+            .await
+    }
+
     pub async fn buy(
         &self,
         user_id: Uuid,
@@ -489,6 +610,19 @@ impl PaperAccountRepository {
         transaction.commit().await?;
         Ok(trade)
     }
+}
+
+fn allocation_slices(values: HashMap<String, Decimal>, total: Decimal) -> Vec<AllocationSlice> {
+    let mut slices = values
+        .into_iter()
+        .map(|(label, market_value)| AllocationSlice {
+            label,
+            market_value,
+            percentage: percentage(market_value, total),
+        })
+        .collect::<Vec<_>>();
+    slices.sort_by_key(|slice| std::cmp::Reverse(slice.market_value));
+    slices
 }
 
 fn percentage(numerator: Decimal, denominator: Decimal) -> Decimal {
