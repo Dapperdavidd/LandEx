@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod config;
 pub mod domain;
 pub mod error;
@@ -23,7 +24,17 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::locations::get_location)
             .service(routes::properties::list_properties)
             .service(routes::properties::get_property)
-            .service(routes::properties::get_property_history),
+            .service(routes::properties::get_property_history)
+            .service(routes::auth::register)
+            .service(routes::auth::login)
+            .service(routes::auth::refresh)
+            .service(routes::auth::logout)
+            .service(routes::auth::me)
+            .service(routes::watchlists::list_watchlists)
+            .service(routes::watchlists::create_watchlist)
+            .service(routes::watchlists::get_watchlist)
+            .service(routes::watchlists::add_watchlist_item)
+            .service(routes::watchlists::remove_watchlist_item),
     );
 }
 
