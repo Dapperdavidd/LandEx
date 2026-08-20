@@ -43,6 +43,9 @@ impl PropertyRepository {
                 l.price_period,
                 l.source_url,
                 l.last_seen_at,
+                (latest_rent.rental_price_monthly * 12 * 100 / latest_sale.price) AS gross_yield_percent,
+                latest_market.annual_growth_percent,
+                latest_score.overall_score,
                 COUNT(*) OVER() AS total_count
             FROM listings l
             INNER JOIN properties p ON p.id = l.property_id
@@ -120,6 +123,9 @@ impl PropertyRepository {
                 l.price_period,
                 l.source_url,
                 l.last_seen_at,
+                NULL::NUMERIC AS gross_yield_percent,
+                NULL::NUMERIC AS annual_growth_percent,
+                NULL::NUMERIC AS overall_score,
                 1::BIGINT AS total_count
             FROM properties p
             INNER JOIN locations loc ON loc.id = p.location_id
@@ -301,6 +307,9 @@ struct PropertyListRow {
     price_period: String,
     source_url: Option<String>,
     last_seen_at: DateTime<Utc>,
+    gross_yield_percent: Option<Decimal>,
+    annual_growth_percent: Option<Decimal>,
+    overall_score: Option<Decimal>,
     total_count: i64,
 }
 
@@ -340,6 +349,12 @@ pub struct PropertyListItem {
     pub price_period: String,
     pub source_url: Option<String>,
     pub last_seen_at: DateTime<Utc>,
+    #[serde(with = "rust_decimal::serde::str_option")]
+    pub gross_yield_percent: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::str_option")]
+    pub annual_growth_percent: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::str_option")]
+    pub overall_score: Option<Decimal>,
 }
 
 impl From<PropertyListRow> for PropertyListItem {
@@ -366,6 +381,9 @@ impl From<PropertyListRow> for PropertyListItem {
             price_period: row.price_period,
             source_url: row.source_url,
             last_seen_at: row.last_seen_at,
+            gross_yield_percent: row.gross_yield_percent,
+            annual_growth_percent: row.annual_growth_percent,
+            overall_score: row.overall_score,
         }
     }
 }

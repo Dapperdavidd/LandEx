@@ -5,13 +5,14 @@ import { PlaceholderPage } from '../pages/PlaceholderPage'
 import { AccessPage } from '../pages/AccessPage'
 import { ProfilePage } from '../pages/ProfilePage'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
+import { ExplorePage } from '../pages/ExplorePage'
 
 export function App() {
   return (
     <TerminalShell>
       <Routes>
         <Route path="/" element={<MarketsPage />} />
-        <Route path="/explore" element={<PlaceholderPage section="Explore" description="Research real properties through price, yield, growth and place." />} />
+        <Route path="/explore" element={<ExplorePage />} />
         <Route path="/access" element={<AccessPage />} />
         <Route path="/watchlist" element={<ProtectedRoute><PlaceholderPage section="Watchlist" description="Markets and properties worth watching, reduced to signal." /></ProtectedRoute>} />
         <Route path="/portfolio" element={<ProtectedRoute><PlaceholderPage section="Portfolio" description="Your simulated exposure to the physical world." /></ProtectedRoute>} />
