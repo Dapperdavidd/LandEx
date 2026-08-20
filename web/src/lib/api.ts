@@ -10,10 +10,12 @@ export class ApiError extends Error {
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const hasBody = init?.body !== undefined
   const response = await fetch(`${API_ROOT}${path}`, {
     ...init,
     headers: {
       Accept: 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...init?.headers,
     },
   })
@@ -21,5 +23,6 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     const body = (await response.json().catch(() => null)) as { message?: string } | null
     throw new ApiError(body?.message ?? 'The market data service is unavailable.', response.status)
   }
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }

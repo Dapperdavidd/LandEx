@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../auth/auth-context'
 
 const links = [
   ['/', 'Markets', '01'],
@@ -10,6 +11,8 @@ const links = [
 ] as const
 
 export function TerminalShell({ children }: { children: ReactNode }) {
+  const auth = useAuth()
+  const initials = auth.user?.display_name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase() ?? 'IN'
   return (
     <div className="terminal-shell">
       <aside className="nav-rail" aria-label="Primary navigation">
@@ -24,9 +27,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <button className="profile-trigger" type="button" aria-label="Open profile">
-          DD
-        </button>
+        <NavLink className="profile-trigger" to={auth.user ? '/profile' : '/access'} aria-label={auth.user ? 'Open profile' : 'Sign in'}>{initials}</NavLink>
       </aside>
       <div className="terminal-main">
         <header className="top-line">
