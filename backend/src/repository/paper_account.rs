@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sqlx::PgPool;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, thiserror::Error)]
@@ -80,6 +81,72 @@ pub struct PaperTrade {
     pub gross_amount: Decimal,
     pub currency: String,
     pub executed_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PortfolioPerformance {
+    pub account_id: Uuid,
+    pub base_currency: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub cash_balance: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub positions_value: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_value: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub net_funding: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_pnl: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub total_return_percent: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub realized_pnl: Decimal,
+    pub positions: Vec<PositionPerformance>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PositionPerformance {
+    pub property_id: Uuid,
+    pub property_type: String,
+    pub country_code: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub units: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub average_entry_price: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub current_price: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub cost_basis: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub market_value: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub unrealized_pnl: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub return_percent: Decimal,
+    pub currency: String,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct TradeCalculationRow {
+    property_id: Uuid,
+    side: String,
+    units: Decimal,
+    gross_amount: Decimal,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct LatestPriceRow {
+    property_id: Uuid,
+    property_type: String,
+    country_code: String,
+    current_price: Decimal,
+    currency: String,
+}
+
+#[derive(Default)]
+struct PositionState {
+    units: Decimal,
+    cost_basis: Decimal,
 }
 
 impl PaperAccountRepository {
@@ -211,6 +278,139 @@ impl PaperAccountRepository {
         .await
     }
 
+    pub async fn trades(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+        limit: i64,
+    ) -> Result<Option<Vec<PaperTrade>>, sqlx::Error> {
+        if self.find(user_id, account_id).await?.is_none() {
+            return Ok(None);
+        }
+        let trades = sqlx::query_as(
+            r#"
+            SELECT paper_trades.id, paper_trades.property_id, paper_trades.side,
+                   paper_trades.units, paper_trades.execution_price,
+                   paper_trades.gross_amount, paper_trades.currency, paper_trades.executed_at
+            FROM paper_trades
+            WHERE account_id = $1
+            ORDER BY executed_at DESC, id DESC
+            LIMIT $2
+            "#,
+        )
+        .bind(account_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(Some(trades))
+    }
+
+    pub async fn performance(
+        &self,
+        user_id: Uuid,
+        account_id: Uuid,
+    ) -> Result<Option<PortfolioPerformance>, sqlx::Error> {
+        let Some(account) = self.find(user_id, account_id).await? else {
+            return Ok(None);
+        };
+        let trades: Vec<TradeCalculationRow> = sqlx::query_as(
+            r#"
+            SELECT property_id, side, units, gross_amount
+            FROM paper_trades
+            WHERE account_id = $1
+            ORDER BY executed_at, id
+            "#,
+        )
+        .bind(account_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut states: HashMap<Uuid, PositionState> = HashMap::new();
+        let mut realized_pnl = Decimal::ZERO;
+        for trade in trades {
+            let state = states.entry(trade.property_id).or_default();
+            if trade.side == "buy" {
+                state.units += trade.units;
+                state.cost_basis += trade.gross_amount;
+            } else if state.units > Decimal::ZERO {
+                let average_cost = state.cost_basis / state.units;
+                realized_pnl += trade.gross_amount - (average_cost * trade.units);
+                state.units -= trade.units;
+                state.cost_basis -= average_cost * trade.units;
+            }
+        }
+
+        let prices: Vec<LatestPriceRow> = sqlx::query_as(
+            r#"
+            SELECT DISTINCT ON (properties.id) properties.id AS property_id,
+                   properties.property_type, locations.country_code,
+                   COALESCE(property_observations.asking_price, property_observations.estimated_value) AS current_price,
+                   property_observations.currency
+            FROM properties
+            JOIN locations ON locations.id = properties.location_id
+            JOIN property_observations ON property_observations.property_id = properties.id
+            WHERE properties.id = ANY($1)
+              AND COALESCE(property_observations.asking_price, property_observations.estimated_value) IS NOT NULL
+            ORDER BY properties.id, property_observations.observed_on DESC,
+                     property_observations.created_at DESC
+            "#,
+        )
+        .bind(states.keys().copied().collect::<Vec<_>>())
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut positions = Vec::new();
+        for price in prices {
+            let Some(state) = states.get(&price.property_id) else {
+                continue;
+            };
+            if state.units <= Decimal::ZERO {
+                continue;
+            }
+            let average_entry_price = state.cost_basis / state.units;
+            let market_value = state.units * price.current_price;
+            let unrealized_pnl = market_value - state.cost_basis;
+            let return_percent = percentage(unrealized_pnl, state.cost_basis);
+            positions.push(PositionPerformance {
+                property_id: price.property_id,
+                property_type: price.property_type,
+                country_code: price.country_code,
+                units: state.units,
+                average_entry_price,
+                current_price: price.current_price,
+                cost_basis: state.cost_basis,
+                market_value,
+                unrealized_pnl,
+                return_percent,
+                currency: price.currency,
+            });
+        }
+        positions.sort_by_key(|position| std::cmp::Reverse(position.market_value));
+
+        let positions_value = positions.iter().map(|position| position.market_value).sum();
+        let net_funding: Decimal = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(amount), 0) FROM paper_cash_ledger WHERE account_id = $1 AND entry_type IN ('initial_funding', 'adjustment')",
+        )
+        .bind(account_id)
+        .fetch_one(&self.pool)
+        .await?;
+        let total_value = account.cash_balance + positions_value;
+        let total_pnl = total_value - net_funding;
+
+        Ok(Some(PortfolioPerformance {
+            account_id,
+            base_currency: account.base_currency,
+            cash_balance: account.cash_balance,
+            positions_value,
+            total_value,
+            net_funding,
+            total_pnl,
+            total_return_percent: percentage(total_pnl, net_funding),
+            realized_pnl,
+            positions,
+        }))
+    }
+
     pub async fn buy(
         &self,
         user_id: Uuid,
@@ -288,6 +488,14 @@ impl PaperAccountRepository {
         insert_cash_entry(&mut transaction, account_id, trade.id, "sale", amount).await?;
         transaction.commit().await?;
         Ok(trade)
+    }
+}
+
+fn percentage(numerator: Decimal, denominator: Decimal) -> Decimal {
+    if denominator == Decimal::ZERO {
+        Decimal::ZERO
+    } else {
+        (numerator / denominator * Decimal::new(100, 0)).round_dp(4)
     }
 }
 

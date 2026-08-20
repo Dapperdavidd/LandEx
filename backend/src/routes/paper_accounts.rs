@@ -79,6 +79,36 @@ pub async fn get_paper_account(
     Ok(HttpResponse::Ok().json(account))
 }
 
+#[get("/paper-accounts/{account_id}/performance")]
+pub async fn get_paper_account_performance(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let performance = PaperAccountRepository::new(state.database.clone())
+        .performance(user.id, account_id.into_inner())
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(performance))
+}
+
+#[get("/paper-accounts/{account_id}/trades")]
+pub async fn list_paper_account_trades(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let trades = PaperAccountRepository::new(state.database.clone())
+        .trades(user.id, account_id.into_inner(), 100)
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(trades))
+}
+
 #[post("/paper-accounts/{account_id}/orders")]
 pub async fn execute_paper_order(
     state: web::Data<AppState>,

@@ -86,6 +86,14 @@ async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
         .to_request();
     assert_eq!(test::call_service(&app, sell).await.status(), 201);
 
+    sqlx::query(
+        "INSERT INTO property_observations (property_id, observed_on, asking_price, currency) VALUES ($1,CURRENT_DATE + 1,600000,'USD')",
+    )
+    .bind(property_id)
+    .execute(&pool)
+    .await
+    .expect("updated price observation");
+
     let detail = test::TestRequest::get()
         .uri(&format!("/api/v1/paper-accounts/{account_id}"))
         .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
@@ -95,6 +103,31 @@ async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
     let detail_body: Value = test::read_body_json(detail_response).await;
     assert_eq!(detail_body["cash_balance"], "85000.0000");
     assert_eq!(detail_body["positions"][0]["units"], "0.030000000000");
+
+    let performance = test::TestRequest::get()
+        .uri(&format!("/api/v1/paper-accounts/{account_id}/performance"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
+        .to_request();
+    let performance_response = test::call_service(&app, performance).await;
+    assert_eq!(performance_response.status(), 200);
+    let performance_body: Value = test::read_body_json(performance_response).await;
+    assert_eq!(performance_body["total_value"], "103000.0000000000000000");
+    assert_eq!(performance_body["total_pnl"], "3000.0000000000000000");
+    assert_eq!(performance_body["total_return_percent"], "3.0000");
+    assert_eq!(performance_body["positions"][0]["country_code"], "US");
+    assert_eq!(
+        performance_body["positions"][0]["property_type"],
+        "apartment"
+    );
+
+    let trades = test::TestRequest::get()
+        .uri(&format!("/api/v1/paper-accounts/{account_id}/trades"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
+        .to_request();
+    let trades_response = test::call_service(&app, trades).await;
+    assert_eq!(trades_response.status(), 200);
+    let trades_body: Value = test::read_body_json(trades_response).await;
+    assert_eq!(trades_body.as_array().expect("trades").len(), 2);
 
     let private = test::TestRequest::get()
         .uri(&format!("/api/v1/paper-accounts/{account_id}"))
