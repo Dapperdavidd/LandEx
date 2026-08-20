@@ -14,8 +14,16 @@ use uuid::Uuid;
 
 #[sqlx::test(migrations = "./migrations")]
 async fn compares_markets_in_one_currency_without_converting_percentages(pool: PgPool) {
-    let lagos = seed_market(&pool, "Lagos", "NG", "NGN", 750_000_000, 4_000_000, 8, 11).await;
-    let austin = seed_market(&pool, "Austin", "US", "USD", 500_000, 3_500, 8, 7).await;
+    let lagos = seed_market(
+        &pool,
+        MarketSeed::new("Lagos", "NG", "NGN", 750_000_000, 4_000_000, 8, 11),
+    )
+    .await;
+    let austin = seed_market(
+        &pool,
+        MarketSeed::new("Austin", "US", "USD", 500_000, 3_500, 8, 7),
+    )
+    .await;
     CurrencyRateRepository::new(pool.clone())
         .upsert(&[CurrencyRate {
             provider: "test".to_owned(),
@@ -52,21 +60,44 @@ async fn compares_markets_in_one_currency_without_converting_percentages(pool: P
     assert_eq!(austin["conversion_status"], "converted");
 }
 
-async fn seed_market(
-    pool: &PgPool,
-    name: &str,
-    country: &str,
-    currency: &str,
+struct MarketSeed<'a> {
+    name: &'a str,
+    country: &'a str,
+    currency: &'a str,
     sale_price: i64,
     rent: i64,
     yield_percent: i64,
     growth: i64,
-) -> Uuid {
+}
+
+impl<'a> MarketSeed<'a> {
+    fn new(
+        name: &'a str,
+        country: &'a str,
+        currency: &'a str,
+        sale_price: i64,
+        rent: i64,
+        yield_percent: i64,
+        growth: i64,
+    ) -> Self {
+        Self {
+            name,
+            country,
+            currency,
+            sale_price,
+            rent,
+            yield_percent,
+            growth,
+        }
+    }
+}
+
+async fn seed_market(pool: &PgPool, seed: MarketSeed<'_>) -> Uuid {
     let location_id: Uuid = sqlx::query_scalar(
         "INSERT INTO locations (kind, name, normalized_name, country_code) VALUES ('city',$1,LOWER($1),$2) RETURNING id",
     )
-    .bind(name)
-    .bind(country)
+    .bind(seed.name)
+    .bind(seed.country)
     .fetch_one(pool)
     .await
     .expect("location");
@@ -74,7 +105,7 @@ async fn seed_market(
         "INSERT INTO markets (location_id, name, property_type) VALUES ($1,$2,'apartment') RETURNING id",
     )
     .bind(location_id)
-    .bind(name)
+    .bind(seed.name)
     .fetch_one(pool)
     .await
     .expect("market");
@@ -82,11 +113,11 @@ async fn seed_market(
         "INSERT INTO market_observations (market_id, observed_on, currency, median_sale_price, median_rent_monthly, gross_yield_percent, annual_growth_percent, active_inventory, days_on_market) VALUES ($1,'2026-08-20',$2,$3,$4,$5,$6,100,45)",
     )
     .bind(market_id)
-    .bind(currency)
-    .bind(Decimal::new(sale_price, 0))
-    .bind(Decimal::new(rent, 0))
-    .bind(Decimal::new(yield_percent, 0))
-    .bind(Decimal::new(growth, 0))
+    .bind(seed.currency)
+    .bind(Decimal::new(seed.sale_price, 0))
+    .bind(Decimal::new(seed.rent, 0))
+    .bind(Decimal::new(seed.yield_percent, 0))
+    .bind(Decimal::new(seed.growth, 0))
     .execute(pool)
     .await
     .expect("market observation");
