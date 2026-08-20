@@ -21,6 +21,63 @@ use sqlx::PgPool;
 
 struct FixtureProvider;
 
+struct ShortletFixtureProvider;
+
+#[async_trait]
+impl PropertyProvider for ShortletFixtureProvider {
+    fn slug(&self) -> &'static str {
+        "shortlet-fixture"
+    }
+
+    async fn fetch_page(&self, _cursor: Option<&str>) -> Result<ProviderPage, IngestionError> {
+        Ok(ProviderPage {
+            locations: vec![ProviderLocation {
+                source_id: "city:lagos".to_owned(),
+                parent_source_id: None,
+                kind: LocationKind::City,
+                name: "Lagos".to_owned(),
+                normalized_name: "lagos".to_owned(),
+                country_code: "NG".to_owned(),
+                administrative_code: None,
+                latitude: None,
+                longitude: None,
+                population: None,
+                raw_payload: json!({}),
+            }],
+            properties: vec![ProviderProperty {
+                source_id: "shortlet:1".to_owned(),
+                location_source_id: "city:lagos".to_owned(),
+                property_type: PropertyType::Apartment,
+                address_line: None,
+                postal_code: None,
+                latitude: None,
+                longitude: None,
+                bedrooms: Some(Decimal::ONE),
+                bathrooms: Some(Decimal::ONE),
+                area_sqm: None,
+                lot_size_sqm: None,
+                year_built: None,
+                attributes: json!({"strategy":"shortlet"}),
+                raw_payload: json!({}),
+            }],
+            listings: vec![ProviderListing {
+                source_id: "shortlet:1".to_owned(),
+                property_source_id: "shortlet:1".to_owned(),
+                listing_type: ListingType::Shortlet,
+                status: ListingStatus::Active,
+                price: Decimal::new(60_000, 0),
+                currency: "NGN".to_owned(),
+                listed_at: None,
+                removed_at: None,
+                source_url: None,
+                observed_at: Utc::now(),
+                raw_payload: json!({}),
+            }],
+            next_cursor: None,
+        })
+    }
+}
+
 #[async_trait]
 impl PropertyProvider for FixtureProvider {
     fn slug(&self) -> &'static str {
@@ -83,8 +140,8 @@ impl PropertyProvider for FixtureProvider {
                 property_type: PropertyType::Apartment,
                 address_line: Some("1 Marina Road".to_owned()),
                 postal_code: None,
-                latitude: 6.4541,
-                longitude: 3.3947,
+                latitude: Some(6.4541),
+                longitude: Some(3.3947),
                 bedrooms: Some(Decimal::new(3, 0)),
                 bathrooms: Some(Decimal::new(2, 0)),
                 area_sqm: Some(Decimal::new(150, 0)),
@@ -248,4 +305,36 @@ async fn ingests_an_unordered_provider_page_atomically(pool: PgPool) {
         history[0].rental_price_monthly,
         Some(Decimal::new(2_000_000, 0))
     );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn preserves_shortlet_nightly_prices_without_inventing_coordinates(pool: PgPool) {
+    let report = IngestionService::new(pool.clone())
+        .run(&ShortletFixtureProvider, 1)
+        .await
+        .expect("shortlet ingestion");
+    assert_eq!(report.properties, 1);
+
+    let listing: (String, String, Decimal) =
+        sqlx::query_as("SELECT listing_type, price_period, price FROM listings")
+            .fetch_one(&pool)
+            .await
+            .expect("shortlet listing");
+    assert_eq!(listing.0, "shortlet");
+    assert_eq!(listing.1, "night");
+    assert_eq!(listing.2, Decimal::new(60_000, 0));
+
+    let property: (Option<f64>, Option<f64>) =
+        sqlx::query_as("SELECT latitude, longitude FROM properties")
+            .fetch_one(&pool)
+            .await
+            .expect("shortlet property");
+    assert_eq!(property, (None, None));
+
+    let nightly: Decimal =
+        sqlx::query_scalar("SELECT shortlet_price_nightly FROM property_observations")
+            .fetch_one(&pool)
+            .await
+            .expect("nightly observation");
+    assert_eq!(nightly, Decimal::new(60_000, 0));
 }

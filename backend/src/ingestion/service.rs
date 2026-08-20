@@ -396,16 +396,17 @@ async fn persist_listing(
         r#"
         INSERT INTO listings (
             property_id, provider_id, source_id, listing_type, status, price,
-            currency, listed_at, removed_at, source_url, raw_payload,
+            currency, price_period, listed_at, removed_at, source_url, raw_payload,
             first_seen_at, last_seen_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
         ON CONFLICT (provider_id, source_id) DO UPDATE SET
             property_id = EXCLUDED.property_id,
             listing_type = EXCLUDED.listing_type,
             status = EXCLUDED.status,
             price = EXCLUDED.price,
             currency = EXCLUDED.currency,
+            price_period = EXCLUDED.price_period,
             listed_at = EXCLUDED.listed_at,
             removed_at = EXCLUDED.removed_at,
             source_url = EXCLUDED.source_url,
@@ -420,6 +421,11 @@ async fn persist_listing(
     .bind(listing.status.as_str())
     .bind(listing.price)
     .bind(&listing.currency)
+    .bind(match listing.listing_type {
+        ListingType::Sale => "total",
+        ListingType::Rent => "month",
+        ListingType::Shortlet => "night",
+    })
     .bind(listing.listed_at)
     .bind(listing.removed_at)
     .bind(&listing.source_url)
@@ -428,23 +434,28 @@ async fn persist_listing(
     .execute(&mut **transaction)
     .await?;
 
-    let (asking_price, rental_price) = match listing.listing_type {
-        ListingType::Sale => (Some(listing.price), None),
-        ListingType::Rent => (None, Some(listing.price)),
+    let (asking_price, rental_price, shortlet_price) = match listing.listing_type {
+        ListingType::Sale => (Some(listing.price), None, None),
+        ListingType::Rent => (None, Some(listing.price), None),
+        ListingType::Shortlet => (None, None, Some(listing.price)),
     };
 
     sqlx::query(
         r#"
         INSERT INTO property_observations (
             property_id, provider_id, observed_on, asking_price,
-            rental_price_monthly, currency, metadata
+            rental_price_monthly, shortlet_price_nightly, currency, metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (property_id, provider_id, observed_on) DO UPDATE SET
             asking_price = COALESCE(EXCLUDED.asking_price, property_observations.asking_price),
             rental_price_monthly = COALESCE(
                 EXCLUDED.rental_price_monthly,
                 property_observations.rental_price_monthly
+            ),
+            shortlet_price_nightly = COALESCE(
+                EXCLUDED.shortlet_price_nightly,
+                property_observations.shortlet_price_nightly
             ),
             currency = EXCLUDED.currency,
             metadata = EXCLUDED.metadata
@@ -455,6 +466,7 @@ async fn persist_listing(
     .bind(listing.observed_at.date_naive())
     .bind(asking_price)
     .bind(rental_price)
+    .bind(shortlet_price)
     .bind(&listing.currency)
     .bind(serde_json::json!({ "listing_source_id": listing.source_id }))
     .execute(&mut **transaction)

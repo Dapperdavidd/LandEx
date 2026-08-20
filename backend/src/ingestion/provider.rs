@@ -28,8 +28,8 @@ pub struct ProviderProperty {
     pub property_type: PropertyType,
     pub address_line: Option<String>,
     pub postal_code: Option<String>,
-    pub latitude: f64,
-    pub longitude: f64,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
     pub bedrooms: Option<Decimal>,
     pub bathrooms: Option<Decimal>,
     pub area_sqm: Option<Decimal>,
@@ -79,7 +79,7 @@ impl ProviderPage {
         for property in &self.properties {
             validate_identifier("property source_id", &property.source_id)?;
             validate_identifier("property location_source_id", &property.location_source_id)?;
-            validate_coordinates(Some(property.latitude), Some(property.longitude))?;
+            validate_coordinates(property.latitude, property.longitude)?;
             if property
                 .bedrooms
                 .is_some_and(|value| value.is_sign_negative())

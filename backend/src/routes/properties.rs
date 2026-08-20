@@ -72,7 +72,11 @@ impl PropertySearchQuery {
                 ],
                 "property_type",
             )?,
-            listing_type: normalize_choice(self.listing_type, &["sale", "rent"], "listing_type")?,
+            listing_type: normalize_choice(
+                self.listing_type,
+                &["sale", "rent", "shortlet"],
+                "listing_type",
+            )?,
             min_price: self.min_price,
             max_price: self.max_price,
             currency: normalize_code(self.currency, 3, "currency")?,

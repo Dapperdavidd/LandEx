@@ -37,6 +37,7 @@ impl PropertyType {
 pub enum ListingType {
     Sale,
     Rent,
+    Shortlet,
 }
 
 impl ListingType {
@@ -44,6 +45,7 @@ impl ListingType {
         match self {
             Self::Sale => "sale",
             Self::Rent => "rent",
+            Self::Shortlet => "shortlet",
         }
     }
 }
@@ -83,8 +85,8 @@ pub struct Property {
     pub property_type: PropertyType,
     pub address_line: Option<String>,
     pub postal_code: Option<String>,
-    pub latitude: f64,
-    pub longitude: f64,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
     pub bedrooms: Option<Decimal>,
     pub bathrooms: Option<Decimal>,
     pub area_sqm: Option<Decimal>,
@@ -105,6 +107,7 @@ pub struct Listing {
     pub status: ListingStatus,
     pub price: Decimal,
     pub currency: String,
+    pub price_period: String,
     pub listed_at: Option<DateTime<Utc>>,
     pub removed_at: Option<DateTime<Utc>>,
     pub source_url: Option<String>,
@@ -121,6 +124,7 @@ pub struct PropertyObservation {
     pub observed_on: NaiveDate,
     pub asking_price: Option<Decimal>,
     pub rental_price_monthly: Option<Decimal>,
+    pub shortlet_price_nightly: Option<Decimal>,
     pub estimated_value: Option<Decimal>,
     pub currency: String,
     pub days_on_market: Option<i32>,
