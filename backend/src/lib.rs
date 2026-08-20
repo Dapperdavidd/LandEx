@@ -25,6 +25,7 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::markets::get_market)
             .service(routes::investment::analyze_investment)
             .service(routes::investment::analyze_shortlet)
+            .service(routes::investment::score_property)
             .service(routes::investment::simulate_scenarios)
             .service(routes::locations::list_locations)
             .service(routes::locations::get_location)

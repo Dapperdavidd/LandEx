@@ -2,7 +2,9 @@ use actix_web::{HttpResponse, post, web};
 
 use crate::{
     error::ApiError,
-    investment::{InvestmentInputs, ScenarioSimulationRequest, ShortletInvestmentInputs},
+    investment::{
+        InvestmentInputs, PropertyScoreInputs, ScenarioSimulationRequest, ShortletInvestmentInputs,
+    },
 };
 
 #[post("/analysis/investment")]
@@ -27,6 +29,17 @@ pub async fn analyze_shortlet(
         .map_err(|error| ApiError::InvalidRequest(error.to_string()))?;
 
     Ok(HttpResponse::Ok().json(analysis))
+}
+
+#[post("/analysis/property-score")]
+pub async fn score_property(
+    inputs: web::Json<PropertyScoreInputs>,
+) -> Result<HttpResponse, ApiError> {
+    let score = inputs
+        .into_inner()
+        .calculate()
+        .map_err(|error| ApiError::InvalidRequest(error.to_string()))?;
+    Ok(HttpResponse::Ok().json(score))
 }
 
 #[post("/analysis/scenarios")]
