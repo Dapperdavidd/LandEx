@@ -4,6 +4,8 @@ use serde_json::json;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
+use crate::{repository::property::PropertyRepository, routes::properties::PropertySearchQuery};
+
 #[derive(Clone)]
 pub struct AlertEvaluationService {
     pool: PgPool,
@@ -27,11 +29,13 @@ struct Rule {
     last_text_value: Option<String>,
     property_id: Option<Uuid>,
     market_id: Option<Uuid>,
+    saved_search_criteria: Option<serde_json::Value>,
 }
 
 enum Snapshot {
     Numeric(Decimal),
     Text(String),
+    Matches { signature: String, count: i64 },
 }
 
 impl AlertEvaluationService {
@@ -44,8 +48,10 @@ impl AlertEvaluationService {
             r#"
             SELECT ar.id, ar.user_id, ar.alert_type, ar.threshold,
                    ar.last_numeric_value, ar.last_text_value,
-                   wi.property_id, wi.market_id
-            FROM alert_rules ar JOIN watchlist_items wi ON wi.id=ar.watchlist_item_id
+                   wi.property_id, wi.market_id, ss.criteria AS saved_search_criteria
+            FROM alert_rules ar
+            LEFT JOIN watchlist_items wi ON wi.id=ar.watchlist_item_id
+            LEFT JOIN saved_searches ss ON ss.id=ar.saved_search_id
             WHERE ar.enabled
             ORDER BY ar.id
         "#,
@@ -62,6 +68,7 @@ impl AlertEvaluationService {
             let initialized = match &snapshot {
                 Snapshot::Numeric(_) => rule.last_numeric_value.is_none(),
                 Snapshot::Text(_) => rule.last_text_value.is_none(),
+                Snapshot::Matches { .. } => rule.last_text_value.is_none(),
             };
             if initialized {
                 report.initialized += 1;
@@ -79,6 +86,10 @@ impl AlertEvaluationService {
                     .last_text_value
                     .as_ref()
                     .is_some_and(|previous| previous != value),
+                Snapshot::Matches { signature, .. } => rule
+                    .last_text_value
+                    .as_ref()
+                    .is_some_and(|previous| previous != signature),
             };
             if trigger && self.emit(&rule, &snapshot).await? {
                 report.emitted += 1;
@@ -89,6 +100,32 @@ impl AlertEvaluationService {
     }
 
     async fn snapshot(&self, rule: &Rule) -> Result<Option<Snapshot>, sqlx::Error> {
+        if rule.alert_type == "new_match" {
+            let Some(criteria) = rule.saved_search_criteria.clone() else {
+                return Ok(None);
+            };
+            let Ok(mut query) = serde_json::from_value::<PropertySearchQuery>(criteria) else {
+                return Ok(None);
+            };
+            query.limit = Some(100);
+            query.offset = Some(0);
+            let Ok(filters) = query.into_filters() else {
+                return Ok(None);
+            };
+            let page = PropertyRepository::new(self.pool.clone())
+                .search(&filters)
+                .await?;
+            let signature = page
+                .items
+                .iter()
+                .map(|item| item.id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            return Ok(Some(Snapshot::Matches {
+                signature,
+                count: page.total,
+            }));
+        }
         if let Some(property_id) = rule.property_id {
             let value = match rule.alert_type.as_str() {
                 "price_change" => numeric(&self.pool, "SELECT price FROM listings WHERE property_id=$1 AND status='active' ORDER BY last_seen_at DESC LIMIT 1", property_id).await?,
@@ -111,13 +148,19 @@ impl AlertEvaluationService {
         let signature = match snapshot {
             Snapshot::Numeric(value) => value.to_string(),
             Snapshot::Text(value) => value.clone(),
+            Snapshot::Matches { signature, .. } => signature.clone(),
         };
         let key = format!("{}:{}:{}", rule.id, rule.alert_type, signature);
-        let body = format!(
-            "{} changed to {}",
-            rule.alert_type.replace('_', " "),
-            signature
-        );
+        let body = match snapshot {
+            Snapshot::Matches { count, .. } => {
+                format!("{count} properties now match your saved search")
+            }
+            _ => format!(
+                "{} changed to {}",
+                rule.alert_type.replace('_', " "),
+                signature
+            ),
+        };
         Ok(sqlx::query(r#"INSERT INTO notifications (user_id, alert_rule_id, notification_type, title, body, payload, deduplication_key)
             VALUES ($1,$2,'alert','LandEX watchlist alert',$3,$4,$5) ON CONFLICT DO NOTHING"#)
             .bind(rule.user_id).bind(rule.id).bind(body).bind(json!({"alert_type":rule.alert_type,"value":signature})).bind(key)
@@ -128,6 +171,7 @@ impl AlertEvaluationService {
         let (numeric, text) = match snapshot {
             Snapshot::Numeric(value) => (Some(*value), None),
             Snapshot::Text(value) => (None, Some(value)),
+            Snapshot::Matches { signature, .. } => (None, Some(signature)),
         };
         sqlx::query("UPDATE alert_rules SET last_numeric_value=$2,last_text_value=$3,last_evaluated_at=NOW(),updated_at=NOW() WHERE id=$1")
             .bind(id).bind(numeric).bind(text).execute(&self.pool).await?;

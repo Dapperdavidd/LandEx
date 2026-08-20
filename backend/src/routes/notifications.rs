@@ -79,6 +79,21 @@ pub async fn create_alert_rule(
     Ok(HttpResponse::Created().json(rule))
 }
 
+#[post("/saved-searches/{search_id}/alert-rule")]
+pub async fn create_saved_search_alert_rule(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    search_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let rule = NotificationRepository::new(state.database.clone())
+        .create_saved_search_rule(user.id, search_id.into_inner())
+        .await
+        .map_err(map_rule_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Created().json(rule))
+}
+
 #[patch("/alert-rules/{id}")]
 pub async fn update_alert_rule(
     state: web::Data<AppState>,

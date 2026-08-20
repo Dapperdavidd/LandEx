@@ -33,6 +33,7 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::notifications::mark_notification_read)
             .service(routes::notifications::list_alert_rules)
             .service(routes::notifications::create_alert_rule)
+            .service(routes::notifications::create_saved_search_alert_rule)
             .service(routes::notifications::update_alert_rule)
             .service(routes::notifications::delete_alert_rule)
             .service(routes::investment::analyze_investment)

@@ -1,7 +1,7 @@
 #![cfg(feature = "integration-tests")]
 
 use actix_web::{App, http::header, test, web};
-use landex_api::{configure_api, state::AppState};
+use landex_api::{alerts::AlertEvaluationService, configure_api, state::AppState};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -11,7 +11,9 @@ async fn saves_and_runs_private_advanced_property_searches(pool: PgPool) {
     seed_investment_property(&pool).await;
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState { database: pool }))
+            .app_data(web::Data::new(AppState {
+                database: pool.clone(),
+            }))
             .configure(configure_api),
     )
     .await;
@@ -56,6 +58,29 @@ async fn saves_and_runs_private_advanced_property_searches(pool: PgPool) {
     assert_eq!(matches_response.status(), 200);
     let matches_body: Value = test::read_body_json(matches_response).await;
     assert_eq!(matches_body["total"], 1);
+
+    let create_alert = test::TestRequest::post()
+        .uri(&format!("/api/v1/saved-searches/{search_id}/alert-rule"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {token}")))
+        .to_request();
+    assert_eq!(test::call_service(&app, create_alert).await.status(), 201);
+    let evaluator = AlertEvaluationService::new(pool.clone());
+    let initialized = evaluator.evaluate().await.expect("initialize alert");
+    assert_eq!(initialized.initialized, 1);
+    sqlx::query("UPDATE listings SET status = 'withdrawn'")
+        .execute(&pool)
+        .await
+        .expect("withdraw listing");
+    let changed = evaluator
+        .evaluate()
+        .await
+        .expect("evaluate changed matches");
+    assert_eq!(changed.emitted, 1);
+    let notifications: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM notifications")
+        .fetch_one(&pool)
+        .await
+        .expect("notifications");
+    assert_eq!(notifications, 1);
 
     let duplicate = test::TestRequest::post()
         .uri("/api/v1/saved-searches")

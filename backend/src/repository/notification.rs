@@ -22,7 +22,8 @@ pub struct Notification {
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct AlertRule {
     pub id: Uuid,
-    pub watchlist_item_id: Uuid,
+    pub watchlist_item_id: Option<Uuid>,
+    pub saved_search_id: Option<Uuid>,
     pub alert_type: String,
     #[serde(with = "rust_decimal::serde::str_option")]
     pub threshold: Option<Decimal>,
@@ -49,7 +50,7 @@ impl NotificationRepository {
     }
 
     pub async fn list_rules(&self, user_id: Uuid) -> Result<Vec<AlertRule>, sqlx::Error> {
-        sqlx::query_as("SELECT id, watchlist_item_id, alert_type, threshold, enabled, created_at, updated_at FROM alert_rules WHERE user_id=$1 ORDER BY created_at DESC, id DESC")
+        sqlx::query_as("SELECT id, watchlist_item_id, saved_search_id, alert_type, threshold, enabled, created_at, updated_at FROM alert_rules WHERE user_id=$1 ORDER BY created_at DESC, id DESC")
             .bind(user_id).fetch_all(&self.pool).await
     }
 
@@ -63,8 +64,19 @@ impl NotificationRepository {
         sqlx::query_as(r#"INSERT INTO alert_rules (user_id, watchlist_item_id, alert_type, threshold)
             SELECT $1, wi.id, $3, $4 FROM watchlist_items wi JOIN watchlists w ON w.id=wi.watchlist_id
             WHERE wi.id=$2 AND w.user_id=$1
-            RETURNING id, watchlist_item_id, alert_type, threshold, enabled, created_at, updated_at"#)
+            RETURNING id, watchlist_item_id, saved_search_id, alert_type, threshold, enabled, created_at, updated_at"#)
             .bind(user_id).bind(item_id).bind(alert_type).bind(threshold).fetch_optional(&self.pool).await
+    }
+
+    pub async fn create_saved_search_rule(
+        &self,
+        user_id: Uuid,
+        saved_search_id: Uuid,
+    ) -> Result<Option<AlertRule>, sqlx::Error> {
+        sqlx::query_as(r#"INSERT INTO alert_rules (user_id, saved_search_id, alert_type)
+            SELECT $1, id, 'new_match' FROM saved_searches WHERE id=$2 AND user_id=$1
+            RETURNING id, watchlist_item_id, saved_search_id, alert_type, threshold, enabled, created_at, updated_at"#)
+            .bind(user_id).bind(saved_search_id).fetch_optional(&self.pool).await
     }
 
     pub async fn set_rule_enabled(
@@ -73,7 +85,7 @@ impl NotificationRepository {
         id: Uuid,
         enabled: bool,
     ) -> Result<Option<AlertRule>, sqlx::Error> {
-        sqlx::query_as("UPDATE alert_rules SET enabled=$3, updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id, watchlist_item_id, alert_type, threshold, enabled, created_at, updated_at")
+        sqlx::query_as("UPDATE alert_rules SET enabled=$3, updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING id, watchlist_item_id, saved_search_id, alert_type, threshold, enabled, created_at, updated_at")
             .bind(id).bind(user_id).bind(enabled).fetch_optional(&self.pool).await
     }
 
