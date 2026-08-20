@@ -7,4 +7,5 @@ pub mod markets;
 pub mod notifications;
 pub mod paper_accounts;
 pub mod properties;
+pub mod providers;
 pub mod watchlists;

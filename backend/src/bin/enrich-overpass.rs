@@ -16,8 +16,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let radius_meters = env::var("OVERPASS_RADIUS_METERS")
         .ok()
         .map_or(Ok(1_000), |value| value.parse::<i32>())?;
+    let provider = match env::var("OVERPASS_ENDPOINT") {
+        Ok(endpoint) => OverpassProvider::with_endpoint(&endpoint)?,
+        Err(_) => OverpassProvider::new()?,
+    };
 
-    let report = OverpassEnrichmentService::new(state.database, OverpassProvider::new()?)
+    let report = OverpassEnrichmentService::new(state.database, provider)
         .enrich_property(property_id, radius_meters)
         .await?;
     println!(

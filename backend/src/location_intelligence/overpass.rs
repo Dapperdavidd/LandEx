@@ -24,13 +24,17 @@ pub struct OverpassProvider {
 
 impl OverpassProvider {
     pub fn new() -> Result<Self, OverpassError> {
+        Self::with_endpoint(DEFAULT_ENDPOINT)
+    }
+
+    pub fn with_endpoint(endpoint: &str) -> Result<Self, OverpassError> {
         Ok(Self {
             client: Client::builder()
                 .user_agent("LandEX/0.1 (+https://github.com/Dapperdavidd/LandEx)")
                 .timeout(std::time::Duration::from_secs(45))
                 .build()
                 .map_err(|error| OverpassError::Configuration(error.to_string()))?,
-            endpoint: Url::parse(DEFAULT_ENDPOINT)
+            endpoint: Url::parse(endpoint)
                 .map_err(|error| OverpassError::Configuration(error.to_string()))?,
         })
     }
