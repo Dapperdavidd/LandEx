@@ -5,7 +5,10 @@ use uuid::Uuid;
 
 use crate::{
     error::ApiError,
-    repository::property::{PropertyRepository, PropertySearchFilters},
+    repository::{
+        location_intelligence::LocationIntelligenceRepository,
+        property::{PropertyRepository, PropertySearchFilters},
+    },
     state::AppState,
 };
 
@@ -13,6 +16,8 @@ const DEFAULT_LIMIT: i64 = 20;
 const MAX_LIMIT: i64 = 100;
 const DEFAULT_HISTORY_LIMIT: i64 = 60;
 const MAX_HISTORY_LIMIT: i64 = 500;
+const DEFAULT_LOCATION_RADIUS_METERS: i32 = 1_000;
+const MAX_LOCATION_RADIUS_METERS: i32 = 10_000;
 
 #[derive(Debug, Deserialize)]
 pub struct PropertySearchQuery {
@@ -29,6 +34,12 @@ pub struct PropertySearchQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct PropertyHistoryQuery {
+    limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LocationIntelligenceQuery {
+    radius_meters: Option<i32>,
     limit: Option<i64>,
 }
 
@@ -142,6 +153,37 @@ pub async fn get_property_history(
         .map_err(|_| ApiError::ServiceUnavailable)?;
 
     Ok(HttpResponse::Ok().json(history))
+}
+
+#[get("/properties/{id}/location-intelligence")]
+pub async fn get_property_location_intelligence(
+    state: web::Data<AppState>,
+    id: web::Path<Uuid>,
+    query: web::Query<LocationIntelligenceQuery>,
+) -> Result<HttpResponse, ApiError> {
+    let radius_meters = query
+        .radius_meters
+        .unwrap_or(DEFAULT_LOCATION_RADIUS_METERS);
+    if !(100..=MAX_LOCATION_RADIUS_METERS).contains(&radius_meters) {
+        return Err(ApiError::InvalidRequest(format!(
+            "radius_meters must be between 100 and {MAX_LOCATION_RADIUS_METERS}"
+        )));
+    }
+
+    let limit = query.limit.unwrap_or(DEFAULT_LIMIT);
+    if !(1..=MAX_LIMIT).contains(&limit) {
+        return Err(ApiError::InvalidRequest(format!(
+            "limit must be between 1 and {MAX_LIMIT}"
+        )));
+    }
+
+    let intelligence = LocationIntelligenceRepository::new(state.database.clone())
+        .for_property(id.into_inner(), radius_meters, limit)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?
+        .ok_or(ApiError::NotFound)?;
+
+    Ok(HttpResponse::Ok().json(intelligence))
 }
 
 fn normalize_code(

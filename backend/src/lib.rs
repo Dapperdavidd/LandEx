@@ -30,6 +30,7 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::properties::list_properties)
             .service(routes::properties::get_property)
             .service(routes::properties::get_property_history)
+            .service(routes::properties::get_property_location_intelligence)
             .service(routes::auth::register)
             .service(routes::auth::login)
             .service(routes::auth::refresh)
