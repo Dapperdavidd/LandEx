@@ -1,6 +1,6 @@
 use actix_web::{HttpResponse, get, web};
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -21,17 +21,23 @@ const MAX_HISTORY_LIMIT: i64 = 500;
 const DEFAULT_LOCATION_RADIUS_METERS: i32 = 1_000;
 const MAX_LOCATION_RADIUS_METERS: i32 = 10_000;
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct PropertySearchQuery {
-    country_code: Option<String>,
-    location_id: Option<Uuid>,
-    property_type: Option<String>,
-    listing_type: Option<String>,
-    min_price: Option<Decimal>,
-    max_price: Option<Decimal>,
-    currency: Option<String>,
-    limit: Option<i64>,
-    offset: Option<i64>,
+    pub country_code: Option<String>,
+    pub location_id: Option<Uuid>,
+    pub property_type: Option<String>,
+    pub listing_type: Option<String>,
+    pub min_price: Option<Decimal>,
+    pub max_price: Option<Decimal>,
+    pub currency: Option<String>,
+    pub min_yield_percent: Option<Decimal>,
+    pub max_yield_percent: Option<Decimal>,
+    pub min_growth_percent: Option<Decimal>,
+    pub max_growth_percent: Option<Decimal>,
+    pub min_score: Option<Decimal>,
+    pub max_score: Option<Decimal>,
+    pub limit: Option<i64>,
+    pub offset: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,7 +52,7 @@ pub struct LocationIntelligenceQuery {
 }
 
 impl PropertySearchQuery {
-    fn into_filters(self) -> Result<PropertySearchFilters, ApiError> {
+    pub(crate) fn into_filters(self) -> Result<PropertySearchFilters, ApiError> {
         let limit = self.limit.unwrap_or(DEFAULT_LIMIT);
         let offset = self.offset.unwrap_or(0);
 
@@ -67,6 +73,27 @@ impl PropertySearchQuery {
                 "min_price cannot be greater than max_price".to_owned(),
             ));
         }
+        validate_range(
+            self.min_yield_percent,
+            self.max_yield_percent,
+            "yield_percent",
+            Decimal::ZERO,
+            Decimal::new(100, 0),
+        )?;
+        validate_range(
+            self.min_growth_percent,
+            self.max_growth_percent,
+            "growth_percent",
+            Decimal::new(-100, 0),
+            Decimal::new(1000, 0),
+        )?;
+        validate_range(
+            self.min_score,
+            self.max_score,
+            "score",
+            Decimal::ZERO,
+            Decimal::new(100, 0),
+        )?;
 
         Ok(PropertySearchFilters {
             country_code: normalize_code(self.country_code, 2, "country_code")?,
@@ -93,10 +120,38 @@ impl PropertySearchQuery {
             min_price: self.min_price,
             max_price: self.max_price,
             currency: normalize_code(self.currency, 3, "currency")?,
+            min_yield_percent: self.min_yield_percent,
+            max_yield_percent: self.max_yield_percent,
+            min_growth_percent: self.min_growth_percent,
+            max_growth_percent: self.max_growth_percent,
+            min_score: self.min_score,
+            max_score: self.max_score,
             limit,
             offset,
         })
     }
+}
+
+fn validate_range(
+    min: Option<Decimal>,
+    max: Option<Decimal>,
+    field: &str,
+    allowed_min: Decimal,
+    allowed_max: Decimal,
+) -> Result<(), ApiError> {
+    if min.is_some_and(|value| value < allowed_min || value > allowed_max)
+        || max.is_some_and(|value| value < allowed_min || value > allowed_max)
+    {
+        return Err(ApiError::InvalidRequest(format!(
+            "{field} is outside the supported range"
+        )));
+    }
+    if min.zip(max).is_some_and(|(min, max)| min > max) {
+        return Err(ApiError::InvalidRequest(format!(
+            "min_{field} cannot be greater than max_{field}"
+        )));
+    }
+    Ok(())
 }
 
 #[get("/properties")]
@@ -270,6 +325,7 @@ mod tests {
             currency: Some("ngn".to_owned()),
             limit: None,
             offset: None,
+            ..Default::default()
         }
         .into_filters()
         .expect("valid filters");
@@ -294,6 +350,7 @@ mod tests {
             currency: None,
             limit: Some(101),
             offset: None,
+            ..Default::default()
         }
         .into_filters();
 

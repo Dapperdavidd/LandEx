@@ -47,6 +47,29 @@ impl PropertyRepository {
             FROM listings l
             INNER JOIN properties p ON p.id = l.property_id
             INNER JOIN locations loc ON loc.id = p.location_id
+            LEFT JOIN LATERAL (
+                SELECT rental_price_monthly FROM property_observations
+                WHERE property_id = p.id AND rental_price_monthly IS NOT NULL
+                ORDER BY observed_on DESC, created_at DESC LIMIT 1
+            ) latest_rent ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT price FROM listings
+                WHERE property_id = p.id AND status = 'active' AND listing_type = 'sale' AND price > 0
+                ORDER BY last_seen_at DESC LIMIT 1
+            ) latest_sale ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT mo.annual_growth_percent FROM markets m
+                JOIN market_observations mo ON mo.market_id = m.id
+                WHERE m.location_id = p.location_id
+                  AND (m.property_type = p.property_type OR m.property_type IS NULL)
+                  AND mo.annual_growth_percent IS NOT NULL
+                ORDER BY (m.property_type IS NOT NULL) DESC, mo.observed_on DESC, mo.created_at DESC LIMIT 1
+            ) latest_market ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT overall_score FROM score_observations
+                WHERE property_id = p.id AND overall_score IS NOT NULL
+                ORDER BY observed_on DESC, created_at DESC LIMIT 1
+            ) latest_score ON TRUE
             WHERE l.status = 'active'
             "#,
         );
@@ -209,6 +232,31 @@ fn apply_filters<'a>(query: &mut QueryBuilder<'a, Postgres>, filters: &'a Proper
         query.push(" AND l.currency = ");
         query.push_bind(currency);
     }
+    let yield_expression = "(latest_rent.rental_price_monthly * 12 * 100 / latest_sale.price)";
+    if let Some(value) = filters.min_yield_percent {
+        query.push(format!(" AND {yield_expression} >= "));
+        query.push_bind(value);
+    }
+    if let Some(value) = filters.max_yield_percent {
+        query.push(format!(" AND {yield_expression} <= "));
+        query.push_bind(value);
+    }
+    if let Some(value) = filters.min_growth_percent {
+        query.push(" AND latest_market.annual_growth_percent >= ");
+        query.push_bind(value);
+    }
+    if let Some(value) = filters.max_growth_percent {
+        query.push(" AND latest_market.annual_growth_percent <= ");
+        query.push_bind(value);
+    }
+    if let Some(value) = filters.min_score {
+        query.push(" AND latest_score.overall_score >= ");
+        query.push_bind(value);
+    }
+    if let Some(value) = filters.max_score {
+        query.push(" AND latest_score.overall_score <= ");
+        query.push_bind(value);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -220,6 +268,12 @@ pub struct PropertySearchFilters {
     pub min_price: Option<Decimal>,
     pub max_price: Option<Decimal>,
     pub currency: Option<String>,
+    pub min_yield_percent: Option<Decimal>,
+    pub max_yield_percent: Option<Decimal>,
+    pub min_growth_percent: Option<Decimal>,
+    pub max_growth_percent: Option<Decimal>,
+    pub min_score: Option<Decimal>,
+    pub max_score: Option<Decimal>,
     pub limit: i64,
     pub offset: i64,
 }

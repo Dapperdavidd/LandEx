@@ -6,5 +6,6 @@ pub mod notification;
 pub mod paper_account;
 pub mod property;
 pub mod provider;
+pub mod saved_search;
 pub mod score;
 pub mod watchlist;
