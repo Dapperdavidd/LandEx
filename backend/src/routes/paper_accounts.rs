@@ -5,7 +5,9 @@ use tracing::error;
 use uuid::Uuid;
 
 use crate::{
-    error::ApiError, repository::paper_account::PaperAccountRepository, routes::auth::authenticate,
+    error::ApiError,
+    repository::paper_account::{PaperAccountRepository, PaperTradeError},
+    routes::auth::authenticate,
     state::AppState,
 };
 
@@ -19,6 +21,16 @@ pub struct CreatePaperAccountRequest {
     base_currency: String,
     #[serde(default = "default_demo_cash", with = "rust_decimal::serde::str")]
     starting_cash: Decimal,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PaperOrderRequest {
+    property_id: Uuid,
+    side: String,
+    #[serde(default, with = "rust_decimal::serde::str_option")]
+    amount: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::str_option")]
+    units: Option<Decimal>,
 }
 
 #[get("/paper-accounts")]
@@ -65,6 +77,57 @@ pub async fn get_paper_account(
         .map_err(database_error)?
         .ok_or(ApiError::NotFound)?;
     Ok(HttpResponse::Ok().json(account))
+}
+
+#[post("/paper-accounts/{account_id}/orders")]
+pub async fn execute_paper_order(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+    body: web::Json<PaperOrderRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let repository = PaperAccountRepository::new(state.database.clone());
+    let account_id = account_id.into_inner();
+    let trade = match body.side.trim().to_lowercase().as_str() {
+        "buy" => {
+            let amount = valid_quantity(body.amount, body.units, "amount")?;
+            repository
+                .buy(user.id, account_id, body.property_id, amount)
+                .await
+        }
+        "sell" => {
+            let units = valid_quantity(body.units, body.amount, "units")?;
+            repository
+                .sell(user.id, account_id, body.property_id, units)
+                .await
+        }
+        _ => {
+            return Err(ApiError::InvalidRequest(
+                "side must be buy or sell".to_owned(),
+            ));
+        }
+    }
+    .map_err(map_trade_error)?;
+    Ok(HttpResponse::Created().json(trade))
+}
+
+fn valid_quantity(
+    expected: Option<Decimal>,
+    unexpected: Option<Decimal>,
+    field: &str,
+) -> Result<Decimal, ApiError> {
+    let Some(value) = expected.filter(|_| unexpected.is_none()) else {
+        return Err(ApiError::InvalidRequest(format!(
+            "provide exactly one positive {field} for this order side"
+        )));
+    };
+    if value <= Decimal::ZERO || value.scale() > 12 {
+        return Err(ApiError::InvalidRequest(format!(
+            "{field} must be positive and support at most 12 decimal places"
+        )));
+    }
+    Ok(value)
 }
 
 fn validate(name: &str, currency: &str, starting_cash: Decimal) -> Result<(), ApiError> {
@@ -119,4 +182,21 @@ fn map_create_error(error: sqlx::Error) -> ApiError {
 fn database_error(error: sqlx::Error) -> ApiError {
     error!(?error, "paper account database operation failed");
     ApiError::Internal
+}
+
+fn map_trade_error(error: PaperTradeError) -> ApiError {
+    match error {
+        PaperTradeError::AccountNotFound | PaperTradeError::PriceUnavailable => ApiError::NotFound,
+        PaperTradeError::CurrencyMismatch => ApiError::InvalidRequest(
+            "property currency must match the paper account until FX conversion is supported"
+                .to_owned(),
+        ),
+        PaperTradeError::InsufficientCash => {
+            ApiError::InvalidRequest("paper account has insufficient cash".to_owned())
+        }
+        PaperTradeError::InsufficientUnits => {
+            ApiError::InvalidRequest("paper account has insufficient units".to_owned())
+        }
+        PaperTradeError::Database(error) => database_error(error),
+    }
 }

@@ -4,12 +4,16 @@ use actix_web::{App, http::header, test, web};
 use landex_api::{configure_api, state::AppState};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 #[sqlx::test(migrations = "./migrations")]
 async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
+    let property_id = seed_property(&pool).await;
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(AppState { database: pool }))
+            .app_data(web::Data::new(AppState {
+                database: pool.clone(),
+            }))
             .configure(configure_api),
     )
     .await;
@@ -57,6 +61,31 @@ async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
     assert_eq!(created["cash_balance"], "100000.0000");
     let account_id = created["id"].as_str().expect("account id");
 
+    let buy = test::TestRequest::post()
+        .uri(&format!("/api/v1/paper-accounts/{account_id}/orders"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
+        .set_json(json!({
+            "property_id": property_id,
+            "side": "buy",
+            "amount": "20000"
+        }))
+        .to_request();
+    let buy_response = test::call_service(&app, buy).await;
+    assert_eq!(buy_response.status(), 201);
+    let bought: Value = test::read_body_json(buy_response).await;
+    assert_eq!(bought["units"], "0.040000000000");
+
+    let sell = test::TestRequest::post()
+        .uri(&format!("/api/v1/paper-accounts/{account_id}/orders"))
+        .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
+        .set_json(json!({
+            "property_id": property_id,
+            "side": "sell",
+            "units": "0.01"
+        }))
+        .to_request();
+    assert_eq!(test::call_service(&app, sell).await.status(), 201);
+
     let detail = test::TestRequest::get()
         .uri(&format!("/api/v1/paper-accounts/{account_id}"))
         .insert_header((header::AUTHORIZATION, format!("Bearer {first_token}")))
@@ -64,11 +93,8 @@ async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
     let detail_response = test::call_service(&app, detail).await;
     assert_eq!(detail_response.status(), 200);
     let detail_body: Value = test::read_body_json(detail_response).await;
-    assert_eq!(
-        detail_body["cash_ledger"][0]["entry_type"],
-        "initial_funding"
-    );
-    assert_eq!(detail_body["cash_ledger"][0]["amount"], "100000.0000");
+    assert_eq!(detail_body["cash_balance"], "85000.0000");
+    assert_eq!(detail_body["positions"][0]["units"], "0.030000000000");
 
     let private = test::TestRequest::get()
         .uri(&format!("/api/v1/paper-accounts/{account_id}"))
@@ -82,4 +108,28 @@ async fn creates_private_demo_capital_with_an_auditable_ledger(pool: PgPool) {
         .set_json(json!({}))
         .to_request();
     assert_eq!(test::call_service(&app, duplicate).await.status(), 409);
+}
+
+async fn seed_property(pool: &PgPool) -> Uuid {
+    let location_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO locations (kind, name, normalized_name, country_code) VALUES ('city','Austin','austin','US') RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("location");
+    let property_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO properties (location_id, property_type, latitude, longitude) VALUES ($1,'apartment',30.2672,-97.7431) RETURNING id",
+    )
+    .bind(location_id)
+    .fetch_one(pool)
+    .await
+    .expect("property");
+    sqlx::query(
+        "INSERT INTO property_observations (property_id, observed_on, asking_price, currency) VALUES ($1,CURRENT_DATE,500000,'USD')",
+    )
+    .bind(property_id)
+    .execute(pool)
+    .await
+    .expect("price observation");
+    property_id
 }
