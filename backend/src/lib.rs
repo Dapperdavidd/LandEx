@@ -5,6 +5,7 @@ pub mod error;
 pub mod fx;
 pub mod ingestion;
 pub mod investment;
+pub mod location_intelligence;
 pub mod market;
 pub mod repository;
 pub mod routes;

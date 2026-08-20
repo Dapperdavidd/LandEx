@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
@@ -90,12 +91,98 @@ impl LocationIntelligenceRepository {
             features,
         }))
     }
+
+    pub async fn property_coordinates(
+        &self,
+        property_id: Uuid,
+    ) -> Result<Option<PropertyCoordinates>, sqlx::Error> {
+        sqlx::query_as("SELECT latitude, longitude FROM properties WHERE id = $1")
+            .bind(property_id)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    pub async fn replace_property_features(
+        &self,
+        property_id: Uuid,
+        radius_meters: i32,
+        expires_at: DateTime<Utc>,
+        features: &[NearbyFeatureInput],
+    ) -> Result<(), sqlx::Error> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query(
+            "DELETE FROM property_nearby_features WHERE property_id = $1 AND query_radius_meters = $2",
+        )
+        .bind(property_id)
+        .bind(radius_meters)
+        .execute(&mut *transaction)
+        .await?;
+
+        for feature in features {
+            let feature_id: Uuid = sqlx::query_scalar(
+                r#"
+                INSERT INTO nearby_features (
+                    source, source_element_type, source_id, category, kind, name, latitude, longitude, tags
+                ) VALUES ('openstreetmap', $1, $2, $3, $4, $5, $6, $7, $8)
+                ON CONFLICT (source, source_element_type, source_id) DO UPDATE SET
+                    category = EXCLUDED.category, kind = EXCLUDED.kind, name = EXCLUDED.name,
+                    latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, tags = EXCLUDED.tags,
+                    updated_at = NOW()
+                RETURNING id
+                "#,
+            )
+            .bind(&feature.source_element_type)
+            .bind(feature.source_id)
+            .bind(&feature.category)
+            .bind(&feature.kind)
+            .bind(&feature.name)
+            .bind(feature.latitude)
+            .bind(feature.longitude)
+            .bind(&feature.tags)
+            .fetch_one(&mut *transaction)
+            .await?;
+            sqlx::query(
+                r#"
+                INSERT INTO property_nearby_features (
+                    property_id, feature_id, distance_meters, query_radius_meters, expires_at
+                ) VALUES ($1, $2, $3, $4, $5)
+                "#,
+            )
+            .bind(property_id)
+            .bind(feature_id)
+            .bind(feature.distance_meters)
+            .bind(radius_meters)
+            .bind(expires_at)
+            .execute(&mut *transaction)
+            .await?;
+        }
+        transaction.commit().await
+    }
 }
 
 #[derive(Debug, FromRow)]
-struct PropertyCoordinates {
-    latitude: Option<f64>,
-    longitude: Option<f64>,
+pub struct PropertyCoordinates {
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+}
+
+impl PropertyCoordinates {
+    pub fn complete(&self) -> Option<(f64, f64)> {
+        self.latitude.zip(self.longitude)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NearbyFeatureInput {
+    pub source_element_type: String,
+    pub source_id: i64,
+    pub category: String,
+    pub kind: String,
+    pub name: Option<String>,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub tags: Value,
+    pub distance_meters: i32,
 }
 
 #[derive(Debug, FromRow, Serialize)]

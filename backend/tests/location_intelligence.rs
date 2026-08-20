@@ -1,7 +1,12 @@
 #![cfg(feature = "integration-tests")]
 
 use actix_web::{App, test, web};
-use landex_api::{configure_api, state::AppState};
+use chrono::{Duration, Utc};
+use landex_api::{
+    configure_api,
+    repository::location_intelligence::{LocationIntelligenceRepository, NearbyFeatureInput},
+    state::AppState,
+};
 use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -76,4 +81,54 @@ async fn returns_cached_nearby_features_and_category_summaries(pool: PgPool) {
     assert_eq!(body["categories"][0]["feature_count"], 1);
     assert_eq!(body["features"][0]["distance_meters"], 120);
     assert_eq!(body["features"][0]["name"], "Test Bus Stop");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn atomically_replaces_a_radius_cache_with_normalized_features(pool: PgPool) {
+    let location_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO locations (kind, name, normalized_name, country_code) VALUES ('city', 'Lagos', 'lagos', 'NG') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("location");
+    let property_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO properties (location_id, property_type, latitude, longitude) VALUES ($1, 'apartment', 6.5244, 3.3792) RETURNING id",
+    )
+    .bind(location_id)
+    .fetch_one(&pool)
+    .await
+    .expect("property");
+    let repository = LocationIntelligenceRepository::new(pool.clone());
+    let expires_at = Utc::now() + Duration::days(7);
+    repository
+        .replace_property_features(
+            property_id,
+            1_000,
+            expires_at,
+            &[NearbyFeatureInput {
+                source_element_type: "node".to_owned(),
+                source_id: 123,
+                category: "education".to_owned(),
+                kind: "school".to_owned(),
+                name: Some("Test School".to_owned()),
+                latitude: 6.525,
+                longitude: 3.38,
+                tags: serde_json::json!({"amenity": "school"}),
+                distance_meters: 120,
+            }],
+        )
+        .await
+        .expect("cache feature");
+    repository
+        .replace_property_features(property_id, 1_000, expires_at, &[])
+        .await
+        .expect("replace cache");
+
+    let cached: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM property_nearby_features WHERE property_id = $1")
+            .bind(property_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count cache");
+    assert_eq!(cached, 0);
 }
