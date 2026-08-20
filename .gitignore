@@ -1,3 +1,6 @@
 .workspace.md
 backend/.env
 backend/target/
+web/node_modules/
+web/dist/
+web/.env

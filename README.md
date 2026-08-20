@@ -24,6 +24,18 @@ docker compose up -d postgres
 
 The API verifies its database connection and applies pending migrations before it starts accepting requests.
 
+## Web development
+
+The React and TypeScript frontend lives in `web/`.
+
+```sh
+cd web
+npm install
+npm run dev
+```
+
+Vite proxies `/api` requests to the local Actix server at `http://localhost:8080`. Set `VITE_API_URL` in an ignored `web/.env` only when the API is hosted elsewhere.
+
 The initial service endpoints are:
 
 - `GET /api/v1/health` — confirms the API process is running.
