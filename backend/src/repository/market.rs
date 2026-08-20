@@ -1,3 +1,4 @@
+use crate::investment::PropertyScoreInputs;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -152,6 +153,35 @@ impl MarketRepository {
             history,
         }))
     }
+
+    pub async fn score_inputs(&self, id: Uuid) -> Result<Option<PropertyScoreInputs>, sqlx::Error> {
+        let metric = sqlx::query_as::<_, MarketScoreInputRow>(
+            r#"
+            SELECT mo.gross_yield_percent, mo.annual_growth_percent, mo.days_on_market
+            FROM markets m LEFT JOIN LATERAL (
+                SELECT gross_yield_percent, annual_growth_percent, days_on_market
+                FROM market_observations WHERE market_id=m.id
+                ORDER BY observed_on DESC, created_at DESC LIMIT 1
+            ) mo ON TRUE WHERE m.id=$1
+        "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(metric.map(|row| PropertyScoreInputs {
+            gross_rental_yield_percent: row.gross_yield_percent,
+            annual_growth_percent: row.annual_growth_percent,
+            days_on_market: row.days_on_market,
+            location: None,
+        }))
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct MarketScoreInputRow {
+    gross_yield_percent: Option<Decimal>,
+    annual_growth_percent: Option<Decimal>,
+    days_on_market: Option<Decimal>,
 }
 
 #[derive(Clone, Debug)]

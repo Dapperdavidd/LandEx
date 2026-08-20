@@ -161,9 +161,13 @@ impl PropertyRepository {
             "#,
         ).bind(id).fetch_optional(&self.pool).await?;
         Ok(row.map(|row| PropertyScoreInputs {
-            gross_rental_yield_percent: row.sale_price.zip(row.monthly_rent).map(
-                |(price, rent)| (rent * Decimal::from(12) * Decimal::from(100) / price).round_dp(4),
-            ),
+            gross_rental_yield_percent: row
+                .sale_price
+                .filter(|price| *price > Decimal::ZERO)
+                .zip(row.monthly_rent)
+                .map(|(price, rent)| {
+                    (rent * Decimal::from(12) * Decimal::from(100) / price).round_dp(4)
+                }),
             annual_growth_percent: row.annual_growth_percent,
             days_on_market: row.days_on_market.map(Decimal::from),
             location: (row.feature_count > 0).then_some(LocationFeatureCounts {

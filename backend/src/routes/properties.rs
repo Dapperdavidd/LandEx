@@ -9,6 +9,7 @@ use crate::{
     repository::{
         location_intelligence::LocationIntelligenceRepository,
         property::{PropertyRepository, PropertySearchFilters},
+        score::ScoreRepository,
     },
     state::AppState,
 };
@@ -201,6 +202,18 @@ pub async fn get_property_score(
         .calculate()
         .map_err(|error| ApiError::InvalidRequest(error.to_string()))?;
     Ok(HttpResponse::Ok().json(score))
+}
+
+#[get("/properties/{id}/score-history")]
+pub async fn get_property_score_history(
+    state: web::Data<AppState>,
+    id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let history = ScoreRepository::new(state.database.clone())
+        .property_history(id.into_inner(), 60)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?;
+    Ok(HttpResponse::Ok().json(history))
 }
 
 fn normalize_code(

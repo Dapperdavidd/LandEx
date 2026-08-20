@@ -4,7 +4,11 @@ use uuid::Uuid;
 
 use crate::{
     error::ApiError,
-    repository::market::{MarketRepository, MarketSearchFilters},
+    investment::PropertyScoreInputs,
+    repository::{
+        market::{MarketRepository, MarketSearchFilters},
+        score::ScoreRepository,
+    },
     state::AppState,
 };
 
@@ -62,6 +66,34 @@ pub async fn get_market(
         .ok_or(ApiError::NotFound)?;
 
     Ok(HttpResponse::Ok().json(market))
+}
+
+#[get("/markets/{id}/score")]
+pub async fn get_market_score(
+    state: web::Data<AppState>,
+    id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let inputs: PropertyScoreInputs = MarketRepository::new(state.database.clone())
+        .score_inputs(id.into_inner())
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?
+        .ok_or(ApiError::NotFound)?;
+    let score = inputs
+        .calculate()
+        .map_err(|error| ApiError::InvalidRequest(error.to_string()))?;
+    Ok(HttpResponse::Ok().json(score))
+}
+
+#[get("/markets/{id}/score-history")]
+pub async fn get_market_score_history(
+    state: web::Data<AppState>,
+    id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let history = ScoreRepository::new(state.database.clone())
+        .market_history(id.into_inner(), 60)
+        .await
+        .map_err(|_| ApiError::ServiceUnavailable)?;
+    Ok(HttpResponse::Ok().json(history))
 }
 
 impl MarketSearchQuery {

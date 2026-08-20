@@ -10,6 +10,7 @@ pub mod location_intelligence;
 pub mod market;
 pub mod repository;
 pub mod routes;
+pub mod scoring;
 pub mod state;
 
 use actix_web::web;
@@ -24,6 +25,8 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::fx::convert)
             .service(routes::markets::list_markets)
             .service(routes::markets::get_market)
+            .service(routes::markets::get_market_score)
+            .service(routes::markets::get_market_score_history)
             .service(routes::notifications::list_notifications)
             .service(routes::notifications::mark_notification_read)
             .service(routes::notifications::list_alert_rules)
@@ -41,6 +44,7 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::properties::get_property_history)
             .service(routes::properties::get_property_location_intelligence)
             .service(routes::properties::get_property_score)
+            .service(routes::properties::get_property_score_history)
             .service(routes::auth::register)
             .service(routes::auth::login)
             .service(routes::auth::refresh)

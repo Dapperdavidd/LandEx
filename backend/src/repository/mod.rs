@@ -5,4 +5,5 @@ pub mod market;
 pub mod notification;
 pub mod paper_account;
 pub mod property;
+pub mod score;
 pub mod watchlist;
