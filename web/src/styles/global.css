@@ -181,3 +181,11 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--text); outline-
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.watchlist-entry__actions { display: flex; gap: .65rem; align-items: center; }
+.watchlist-entry__actions button { display: inline-block; }
+.watchlist-alert-form { grid-column: 1 / -1; display: flex; gap: .75rem; align-items: end; padding: 1rem 0 0 3rem; border-top: 1px solid var(--border); }
+.watchlist-alert-form label { display: grid; gap: .35rem; min-width: 11rem; color: var(--muted); font: .65rem/1 var(--data); letter-spacing: .08em; text-transform: uppercase; }
+.watchlist-alert-form select, .watchlist-alert-form input { min-height: 2.4rem; padding: .45rem .6rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); font: .8rem var(--data); }
+.watchlist-alert-form label:last-of-type { position: relative; }.watchlist-alert-form label:last-of-type input { padding-right: 1.7rem; }.watchlist-alert-form label small { position: absolute; right: .65rem; bottom: .78rem; color: var(--muted); font: .8rem var(--data); }
+@media (max-width: 700px) { .watchlist-entry__actions { justify-content: flex-start; }.watchlist-alert-form { padding-left: 0; flex-wrap: wrap; } }
