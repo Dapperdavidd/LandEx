@@ -26,6 +26,8 @@ impl MarketRepository {
                 loc.name AS location_name,
                 loc.kind AS location_kind,
                 loc.country_code,
+                loc.latitude,
+                loc.longitude,
                 latest.observed_on,
                 latest.currency,
                 latest.median_sale_price,
@@ -214,6 +216,8 @@ struct MarketRow {
     location_name: String,
     location_kind: String,
     country_code: String,
+    latitude: Option<f64>,
+    longitude: Option<f64>,
     observed_on: Option<NaiveDate>,
     currency: Option<String>,
     median_sale_price: Option<Decimal>,
@@ -258,6 +262,8 @@ pub struct MarketSummary {
     pub location_name: String,
     pub location_kind: String,
     pub country_code: String,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
     pub latest: LatestMarketMetric,
 }
 
@@ -271,6 +277,8 @@ impl From<MarketRow> for MarketSummary {
             location_name: row.location_name,
             location_kind: row.location_kind,
             country_code: row.country_code,
+            latitude: row.latitude,
+            longitude: row.longitude,
             latest: LatestMarketMetric {
                 observed_on: row.observed_on,
                 currency: row.currency,

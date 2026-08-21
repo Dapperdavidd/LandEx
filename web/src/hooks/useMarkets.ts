@@ -7,12 +7,12 @@ type MarketState =
   | { status: 'ready'; data: MarketPage; message: null }
   | { status: 'error'; data: null; message: string }
 
-export function useMarkets(): MarketState {
+export function useMarkets(limit = 8): MarketState {
   const [state, setState] = useState<MarketState>({ status: 'loading', data: null, message: null })
 
   useEffect(() => {
     const controller = new AbortController()
-    apiRequest<MarketPage>('/markets?limit=8', { signal: controller.signal })
+    apiRequest<MarketPage>(`/markets?limit=${limit}`, { signal: controller.signal })
       .then((data) => setState({ status: 'ready', data, message: null }))
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
@@ -23,7 +23,7 @@ export function useMarkets(): MarketState {
         })
       })
     return () => controller.abort()
-  }, [])
+  }, [limit])
 
   return state
 }
