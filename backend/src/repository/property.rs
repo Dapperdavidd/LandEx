@@ -123,13 +123,36 @@ impl PropertyRepository {
                 l.price_period,
                 l.source_url,
                 l.last_seen_at,
-                NULL::NUMERIC AS gross_yield_percent,
-                NULL::NUMERIC AS annual_growth_percent,
-                NULL::NUMERIC AS overall_score,
+                (latest_rent.rental_price_monthly * 12 * 100 / latest_sale.price) AS gross_yield_percent,
+                latest_market.annual_growth_percent,
+                latest_score.overall_score,
                 1::BIGINT AS total_count
             FROM properties p
             INNER JOIN locations loc ON loc.id = p.location_id
             INNER JOIN listings l ON l.property_id = p.id
+            LEFT JOIN LATERAL (
+                SELECT rental_price_monthly FROM property_observations
+                WHERE property_id = p.id AND rental_price_monthly IS NOT NULL
+                ORDER BY observed_on DESC, created_at DESC LIMIT 1
+            ) latest_rent ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT price FROM listings
+                WHERE property_id = p.id AND status = 'active' AND listing_type = 'sale' AND price > 0
+                ORDER BY last_seen_at DESC LIMIT 1
+            ) latest_sale ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT mo.annual_growth_percent FROM markets m
+                JOIN market_observations mo ON mo.market_id = m.id
+                WHERE m.location_id = p.location_id
+                  AND (m.property_type = p.property_type OR m.property_type IS NULL)
+                  AND mo.annual_growth_percent IS NOT NULL
+                ORDER BY (m.property_type IS NOT NULL) DESC, mo.observed_on DESC, mo.created_at DESC LIMIT 1
+            ) latest_market ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT overall_score FROM score_observations
+                WHERE property_id = p.id AND overall_score IS NOT NULL
+                ORDER BY observed_on DESC, created_at DESC LIMIT 1
+            ) latest_score ON TRUE
             WHERE p.id = $1 AND l.status = 'active'
             ORDER BY l.last_seen_at DESC
             LIMIT 1
