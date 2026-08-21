@@ -9,6 +9,7 @@ import { ExplorePage } from '../pages/ExplorePage'
 import { PropertyPage } from '../pages/PropertyPage'
 import { WatchlistPage } from '../pages/WatchlistPage'
 import { SimulatePage } from '../pages/SimulatePage'
+import { PortfolioPage } from '../pages/PortfolioPage'
 
 export function App() {
   return (
@@ -19,7 +20,7 @@ export function App() {
         <Route path="/properties/:id" element={<PropertyPage />} />
         <Route path="/access" element={<AccessPage />} />
         <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
-        <Route path="/portfolio" element={<ProtectedRoute><PlaceholderPage section="Portfolio" description="Your simulated exposure to the physical world." /></ProtectedRoute>} />
+        <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
         <Route path="/simulate" element={<ProtectedRoute><SimulatePage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="*" element={<PlaceholderPage section="Not found" description="That market surface does not exist." />} />

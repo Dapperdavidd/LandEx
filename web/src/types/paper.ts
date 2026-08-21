@@ -1,2 +1,7 @@
 export interface PaperAccount { id: string; name: string; base_currency: string; cash_balance: string; status: string; created_at: string; updated_at: string }
 export interface PaperTrade { id: string; property_id: string; side: string; units: string; execution_price: string; gross_amount: string; currency: string; executed_at: string }
+export interface PositionPerformance { property_id: string; property_type: string; country_code: string; units: string; average_entry_price: string; current_price: string; cost_basis: string; market_value: string; unrealized_pnl: string; return_percent: string; currency: string }
+export interface PortfolioPerformance { account_id: string; base_currency: string; cash_balance: string; positions_value: string; total_value: string; net_funding: string; total_pnl: string; total_return_percent: string; realized_pnl: string; positions: PositionPerformance[] }
+export interface AllocationSlice { label: string; market_value: string; percentage: string }
+export interface PortfolioAllocation { account_id: string; positions_value: string; by_country: AllocationSlice[]; by_property_type: AllocationSlice[]; unavailable_dimensions: string[] }
+export interface PortfolioSnapshot { observed_on: string; base_currency: string; cash_balance: string; positions_value: string; total_value: string; net_funding: string; total_pnl: string; total_return_percent: string; realized_pnl: string }
