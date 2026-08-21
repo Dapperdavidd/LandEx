@@ -7,6 +7,7 @@ import { ProfilePage } from '../pages/ProfilePage'
 import { ProtectedRoute } from '../auth/ProtectedRoute'
 import { ExplorePage } from '../pages/ExplorePage'
 import { PropertyPage } from '../pages/PropertyPage'
+import { WatchlistPage } from '../pages/WatchlistPage'
 
 export function App() {
   return (
@@ -16,7 +17,7 @@ export function App() {
         <Route path="/explore" element={<ExplorePage />} />
         <Route path="/properties/:id" element={<PropertyPage />} />
         <Route path="/access" element={<AccessPage />} />
-        <Route path="/watchlist" element={<ProtectedRoute><PlaceholderPage section="Watchlist" description="Markets and properties worth watching, reduced to signal." /></ProtectedRoute>} />
+        <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
         <Route path="/portfolio" element={<ProtectedRoute><PlaceholderPage section="Portfolio" description="Your simulated exposure to the physical world." /></ProtectedRoute>} />
         <Route path="/simulate" element={<ProtectedRoute><PlaceholderPage section="Simulate" description="Model how capital could move through markets over time." /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
