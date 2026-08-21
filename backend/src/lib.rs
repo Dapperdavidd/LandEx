@@ -56,6 +56,8 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::saved_searches::match_saved_search)
             .service(routes::auth::register)
             .service(routes::auth::login)
+            .service(routes::auth::google_login)
+            .service(routes::auth::link_google)
             .service(routes::auth::refresh)
             .service(routes::auth::logout)
             .service(routes::auth::me)

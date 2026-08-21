@@ -114,6 +114,84 @@ impl AuthRepository {
         Ok(tokens)
     }
 
+    pub async fn find_or_create_google_user(
+        &self,
+        subject: &str,
+        email: &str,
+        normalized_email: &str,
+        display_name: &str,
+    ) -> Result<UserRecord, GoogleIdentityError> {
+        let mut transaction = self.pool.begin().await?;
+        if let Some(user) = find_external_user(&mut transaction, "google", subject).await? {
+            transaction.commit().await?;
+            return Ok(user);
+        }
+
+        let email_exists = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE primary_email_normalized = $1)",
+        )
+        .bind(normalized_email)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if email_exists {
+            transaction.rollback().await?;
+            return Err(GoogleIdentityError::LinkRequired);
+        }
+
+        let user = sqlx::query_as::<_, UserRecord>(
+            r#"
+            INSERT INTO users (
+                display_name, primary_email, primary_email_normalized, email_verified_at
+            ) VALUES ($1, $2, $3, NOW())
+            RETURNING id, display_name, primary_email, email_verified_at, created_at
+            "#,
+        )
+        .bind(display_name)
+        .bind(email)
+        .bind(normalized_email)
+        .fetch_one(&mut *transaction)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO user_identities (
+                user_id, provider, provider_subject, email, email_normalized
+            ) VALUES ($1, 'google', $2, $3, $4)
+            "#,
+        )
+        .bind(user.id)
+        .bind(subject)
+        .bind(email)
+        .bind(normalized_email)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        Ok(user)
+    }
+
+    pub async fn link_google_identity(
+        &self,
+        user_id: Uuid,
+        subject: &str,
+        email: &str,
+        normalized_email: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO user_identities (
+                user_id, provider, provider_subject, email, email_normalized
+            ) VALUES ($1, 'google', $2, $3, $4)
+            "#,
+        )
+        .bind(user_id)
+        .bind(subject)
+        .bind(email)
+        .bind(normalized_email)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     pub async fn authenticate_access_token(
         &self,
         access_token: &str,
@@ -190,6 +268,38 @@ impl AuthRepository {
         .await?;
         Ok(result.rows_affected() == 1)
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GoogleIdentityError {
+    #[error(
+        "an account already exists for this email; sign in with its existing method before linking Google"
+    )]
+    LinkRequired,
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
+
+async fn find_external_user(
+    transaction: &mut Transaction<'_, Postgres>,
+    provider: &str,
+    subject: &str,
+) -> Result<Option<UserRecord>, sqlx::Error> {
+    sqlx::query_as(
+        r#"
+        SELECT users.id, users.display_name, users.primary_email,
+               users.email_verified_at, users.created_at
+        FROM user_identities
+        JOIN users ON users.id = user_identities.user_id
+        WHERE user_identities.provider = $1
+          AND user_identities.provider_subject = $2
+          AND users.status = 'active'
+        "#,
+    )
+    .bind(provider)
+    .bind(subject)
+    .fetch_optional(&mut **transaction)
+    .await
 }
 
 async fn insert_session(
