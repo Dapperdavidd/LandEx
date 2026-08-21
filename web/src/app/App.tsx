@@ -12,6 +12,7 @@ import { SimulatePage } from '../pages/SimulatePage'
 import { PortfolioPage } from '../pages/PortfolioPage'
 import { MarketDetailPage } from '../pages/MarketDetailPage'
 import { MarketComparisonPage } from '../pages/MarketComparisonPage'
+import { SignalsPage } from '../pages/SignalsPage'
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
         <Route path="/" element={<MarketsPage />} />
         <Route path="/markets/:id" element={<MarketDetailPage />} />
         <Route path="/compare" element={<MarketComparisonPage />} />
+        <Route path="/signals" element={<ProtectedRoute><SignalsPage /></ProtectedRoute>} />
         <Route path="/explore" element={<ExplorePage />} />
         <Route path="/properties/:id" element={<PropertyPage />} />
         <Route path="/access" element={<AccessPage />} />
