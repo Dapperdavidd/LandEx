@@ -35,3 +35,5 @@ export interface PropertyLocationIntelligence { property_id: string; property_la
 export interface WatchlistSummary { id: string; name: string; item_count: number; created_at: string; updated_at: string }
 export interface WatchlistItem { id: string; property_id: string | null; market_id: string | null; location_id: string | null; created_at: string }
 export interface WatchlistDetail extends WatchlistSummary { items: WatchlistItem[] }
+export interface Notification { id: string; notification_type: string; title: string; body: string; read_at: string | null; created_at: string }
+export interface AlertRule { id: string; watchlist_item_id: string | null; saved_search_id: string | null; alert_type: string; threshold: string | null; enabled: boolean; created_at: string; updated_at: string }
