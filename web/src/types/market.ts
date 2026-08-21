@@ -26,3 +26,5 @@ export interface MarketPage {
   limit: number
   offset: number
 }
+export interface MarketMetric { observed_on: string; currency: string; median_sale_price: string | null; median_rent_monthly: string | null; gross_yield_percent: string | null; annual_growth_percent: string | null; active_inventory: number | null; days_on_market: string | null }
+export interface MarketDetail { id: string; name: string; property_type: string | null; location_id: string; location_name: string; location_kind: string; country_code: string; history: MarketMetric[] }

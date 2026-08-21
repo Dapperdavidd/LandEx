@@ -10,12 +10,14 @@ import { PropertyPage } from '../pages/PropertyPage'
 import { WatchlistPage } from '../pages/WatchlistPage'
 import { SimulatePage } from '../pages/SimulatePage'
 import { PortfolioPage } from '../pages/PortfolioPage'
+import { MarketDetailPage } from '../pages/MarketDetailPage'
 
 export function App() {
   return (
     <TerminalShell>
       <Routes>
         <Route path="/" element={<MarketsPage />} />
+        <Route path="/markets/:id" element={<MarketDetailPage />} />
         <Route path="/explore" element={<ExplorePage />} />
         <Route path="/properties/:id" element={<PropertyPage />} />
         <Route path="/access" element={<AccessPage />} />
