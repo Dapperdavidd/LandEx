@@ -109,6 +109,13 @@ button:focus-visible, a:focus-visible { outline: 1px solid var(--text); outline-
 .form-error { margin: 0; color: var(--negative); font: 400 10px/1.5 var(--data); }
 .primary-action { min-height: 52px; border: 1px solid var(--text); background: var(--text); color: var(--canvas); font: 500 9px var(--data); text-transform: uppercase; letter-spacing: .1em; cursor: pointer; transition: background .2s ease, color .2s ease; }
 .primary-action:hover { background: transparent; color: var(--text); }.primary-action:disabled { cursor: wait; opacity: .55; }
+.access-divider { margin: 30px 0 18px; display: flex; align-items: center; gap: 14px; color: var(--faint); font: 400 8px var(--data); letter-spacing: .1em; text-transform: uppercase; }
+.access-divider::before, .access-divider::after { height: 1px; flex: 1; background: var(--border); content: ''; }
+.social-access { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.social-access button { min-height: 48px; padding: 0 14px; display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 10px; border: 1px solid var(--border); background: transparent; color: var(--text); font: 500 9px var(--data); letter-spacing: .08em; text-align: left; text-transform: uppercase; }
+.social-access button:disabled { cursor: not-allowed; opacity: .72; }
+.social-access svg { width: 16px; height: 16px; }
+.social-access small { color: var(--faint); font: 400 7px var(--data); letter-spacing: .12em; }
 .access-disclosure { margin: 34px 0 0; }
 .profile-page { min-height: calc(100vh - 58px); padding: 12vh clamp(28px, 8vw, 130px); }
 .profile-page__header { margin: 35px 0 90px; display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid var(--border); padding-bottom: 30px; }
