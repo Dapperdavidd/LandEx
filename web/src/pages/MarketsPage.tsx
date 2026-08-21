@@ -2,6 +2,7 @@ import { DataLabel } from '../components/DataLabel'
 import { MarketNumber } from '../components/MarketNumber'
 import { useMarkets } from '../hooks/useMarkets'
 import { formatMoney, formatPercent } from '../lib/format'
+import { Link } from 'react-router-dom'
 
 const metricOptions = ['Price', 'Yield', 'Growth', 'Demand'] as const
 
@@ -67,7 +68,7 @@ export function MarketsPage() {
               <span>Market</span><span>Median price</span><span>Yield</span><span>Growth</span><span>Inventory</span>
             </div>
             {markets.data.items.map((market, index) => (
-              <article className="market-row" role="row" key={market.id}>
+              <Link className="market-row" role="row" to={`/markets/${market.id}`} key={market.id}>
                 <div className="market-row__identity">
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <div><strong>{market.location_name}</strong><small>{market.country_code} / {market.property_type ?? 'ALL PROPERTY'}</small></div>
@@ -78,7 +79,7 @@ export function MarketsPage() {
                   {formatPercent(market.latest.annual_growth_percent)}
                 </span>
                 <span>{market.latest.active_inventory ?? '—'}</span>
-              </article>
+              </Link>
             ))}
           </div>
         )}
