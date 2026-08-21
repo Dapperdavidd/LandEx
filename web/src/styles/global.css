@@ -19,6 +19,9 @@
   --data: 'DM Mono', monospace;
 }
 
+:focus-visible { outline: 2px solid var(--positive); outline-offset: 3px; }
+.skip-link { position: fixed; z-index: 100; top: 12px; left: 12px; padding: 10px 14px; transform: translateY(-170%); background: var(--text); color: var(--canvas); font: 500 9px var(--data); letter-spacing: .08em; text-transform: uppercase; transition: transform .15s ease; }.skip-link:focus { transform: translateY(0); }
+
 * { box-sizing: border-box; }
 html { background: var(--canvas); scroll-behavior: smooth; }
 body { margin: 0; min-width: 320px; min-height: 100vh; background: var(--canvas); }

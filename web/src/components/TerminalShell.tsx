@@ -35,6 +35,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
   function run(to: string) { setCommandOpen(false); setQuery(''); navigate(to) }
   return (
     <div className="terminal-shell">
+      <a className="skip-link" href="#terminal-content">Skip to market content</a>
       <aside className="nav-rail" aria-label="Primary navigation">
         <NavLink className="brand" to="/" aria-label="LandEX home">
           L<span>X</span>
@@ -49,7 +50,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
         </nav>
         <NavLink className="profile-trigger" to={auth.user ? '/profile' : '/access'} aria-label={auth.user ? 'Open profile' : 'Sign in'}>{initials}</NavLink>
       </aside>
-      <div className="terminal-main">
+      <div className="terminal-main" id="terminal-content" tabIndex={-1}>
         <header className="top-line">
           <span>Global real-estate intelligence</span>
           <button className="command-trigger" type="button" onClick={() => setCommandOpen(true)}>
