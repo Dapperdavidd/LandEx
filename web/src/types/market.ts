@@ -17,6 +17,8 @@ export interface MarketSummary {
   location_name: string
   location_kind: string
   country_code: string
+  latitude: number | null
+  longitude: number | null
   latest: LatestMarketMetric
 }
 
