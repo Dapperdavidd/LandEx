@@ -55,6 +55,7 @@ export function MarketsPage() {
             <h2 id="market-feed-title">Now in view</h2>
           </div>
           {markets.status === 'ready' && <MarketNumber compact label="NORMALIZED MARKETS" value={String(markets.data.total)} />}
+          <Link className="market-compare-link" to="/compare">Compare markets ↗</Link>
         </div>
 
         {markets.status === 'loading' && <MarketState message="Reading the market…" />}
