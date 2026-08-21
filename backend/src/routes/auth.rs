@@ -3,9 +3,13 @@ use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use crate::{
-    auth::{email_looks_valid, hash_password, normalize_email, verify_password},
+    auth::{
+        email_looks_valid,
+        google::{GoogleVerificationError, verify_google_credential},
+        hash_password, normalize_email, verify_password,
+    },
     error::ApiError,
-    repository::auth::{AuthRepository, SessionTokens, UserRecord},
+    repository::auth::{AuthRepository, GoogleIdentityError, SessionTokens, UserRecord},
     state::AppState,
 };
 
@@ -27,6 +31,11 @@ pub struct LoginRequest {
 #[derive(Debug, Deserialize)]
 pub struct RefreshRequest {
     refresh_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GoogleLoginRequest {
+    credential: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -106,6 +115,61 @@ pub async fn login(
         .map_err(database_error)?;
 
     Ok(HttpResponse::Ok().json(AuthResponse { user, session }))
+}
+
+#[post("/auth/google")]
+pub async fn google_login(
+    state: web::Data<AppState>,
+    request: web::Json<GoogleLoginRequest>,
+) -> Result<HttpResponse, ApiError> {
+    if request.credential.len() > 16_384 {
+        return Err(ApiError::InvalidRequest(
+            "credential is too long".to_owned(),
+        ));
+    }
+    let claims = verify_google_credential(&request.credential)
+        .await
+        .map_err(map_google_verification_error)?;
+    let normalized_email = normalize_email(&claims.email);
+    let display_name = claims
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| claims.email.split('@').next().unwrap_or("LandEX investor"));
+    let repository = AuthRepository::new(state.database.clone());
+    let user = repository
+        .find_or_create_google_user(&claims.sub, &claims.email, &normalized_email, display_name)
+        .await
+        .map_err(map_google_identity_error)?;
+    let session = repository
+        .create_session(user.id)
+        .await
+        .map_err(database_error)?;
+    Ok(HttpResponse::Ok().json(AuthResponse { user, session }))
+}
+
+#[post("/auth/google/link")]
+pub async fn link_google(
+    state: web::Data<AppState>,
+    http_request: HttpRequest,
+    request: web::Json<GoogleLoginRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &http_request).await?;
+    let claims = verify_google_credential(&request.credential)
+        .await
+        .map_err(map_google_verification_error)?;
+    let normalized_email = normalize_email(&claims.email);
+    if normalized_email != normalize_email(&user.primary_email) {
+        return Err(ApiError::Conflict(
+            "Google email must match the signed-in account email".to_owned(),
+        ));
+    }
+    AuthRepository::new(state.database.clone())
+        .link_google_identity(user.id, &claims.sub, &claims.email, &normalized_email)
+        .await
+        .map_err(map_identity_link_error)?;
+    Ok(HttpResponse::NoContent().finish())
 }
 
 #[post("/auth/refresh")]
@@ -205,4 +269,28 @@ fn map_registration_error(error: sqlx::Error) -> ApiError {
 fn database_error(error: sqlx::Error) -> ApiError {
     error!(?error, "authentication database operation failed");
     ApiError::Internal
+}
+
+fn map_google_verification_error(error: GoogleVerificationError) -> ApiError {
+    match error {
+        GoogleVerificationError::NotConfigured => ApiError::ServiceUnavailable,
+        GoogleVerificationError::InvalidCredential => ApiError::Unauthorized,
+        GoogleVerificationError::Unavailable => ApiError::ServiceUnavailable,
+    }
+}
+
+fn map_google_identity_error(error: GoogleIdentityError) -> ApiError {
+    match error {
+        GoogleIdentityError::LinkRequired => ApiError::Conflict(error.to_string()),
+        GoogleIdentityError::Database(error) => database_error(error),
+    }
+}
+
+fn map_identity_link_error(error: sqlx::Error) -> ApiError {
+    if let sqlx::Error::Database(database_error) = &error
+        && database_error.is_unique_violation()
+    {
+        return ApiError::Conflict("this Google account is already linked".to_owned());
+    }
+    database_error(error)
 }
