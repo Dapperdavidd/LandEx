@@ -6,7 +6,7 @@ import { PropertyHistoryChart } from '../components/PropertyHistoryChart'
 import { usePropertyDetail } from '../hooks/usePropertyDetail'
 import { apiRequest } from '../lib/api'
 import { formatMoney, formatPercent } from '../lib/format'
-import type { WatchlistSummary } from '../types/property'
+import type { PropertyListItem, WatchlistSummary } from '../types/property'
 
 export function PropertyPage() {
   const { id } = useParams(); const route = useLocation(); const auth = useAuth(); const detail = usePropertyDetail(id)
@@ -39,6 +39,7 @@ export function PropertyPage() {
       {actionError && <span role="alert">{actionError}</span>}
     </section>
     <section className="asset-metrics"><Metric label="Rental yield" value={formatPercent(property.gross_yield_percent)} /><Metric label="Annual growth" value={formatPercent(property.annual_growth_percent)} signal /><Metric label="Investment score" value={score.overall_score ?? '—'} /><Metric label="Last observed" value={new Date(property.last_seen_at).toLocaleDateString()} /></section>
+    <InvestmentBrief property={property} unavailable={score.unavailable_components} />
     <section className="asset-chart"><div className="section-heading"><div><DataLabel>Market history</DataLabel><h2>Price as a signal.</h2></div><span>{history.length} observations</span></div><PropertyHistoryChart points={history} /></section>
     <section className="intelligence-grid">
       <div className="score-panel"><div className="section-heading"><div><DataLabel>Investment profile</DataLabel><h2>Explain the score.</h2></div><strong>{score.overall_score ?? '—'}</strong></div><div className="score-components">{score.components.map((component) => <details key={component.name}><summary><span>{component.name}</span><strong>{component.score ?? 'N/A'}</strong></summary><p>{component.methodology}</p></details>)}</div><p className="method-note">Unavailable components remain excluded rather than guessed: {score.unavailable_components.join(', ') || 'none'}.</p></div>
@@ -49,5 +50,10 @@ export function PropertyPage() {
 }
 
 function Metric({ label, value, signal = false }: { label: string; value: string; signal?: boolean }) { return <div><DataLabel>{label}</DataLabel><strong className={signal && value !== '—' ? Number.parseFloat(value) >= 0 ? 'signal--positive' : 'signal--negative' : ''}>{value}</strong></div> }
+function InvestmentBrief({ property, unavailable }: { property: PropertyListItem; unavailable: string[] }) {
+  const yieldValue = property.gross_yield_percent === null ? null : Number(property.gross_yield_percent)
+  const growthValue = property.annual_growth_percent === null ? null : Number(property.annual_growth_percent)
+  return <section className="investment-brief"><div><DataLabel>Before you paper invest</DataLabel><h2>Understand the signals.</h2><p>LandEX separates what the source observed from what its calculation engine derived. This is educational research, not a promise of future return.</p></div><div className="investment-brief__lessons"><article><span>01 / Income</span><strong>{yieldValue === null ? 'Not enough rent data' : `${yieldValue.toFixed(2)}% gross yield`}</strong><p>{yieldValue === null ? 'A yield is withheld until both price and rent inputs are available.' : 'Gross yield compares estimated annual rent with asking price before vacancy, tax, maintenance, insurance, financing, and fees.'}</p></article><article><span>02 / Market movement</span><strong>{growthValue === null ? 'Growth unavailable' : `${growthValue >= 0 ? '+' : ''}${growthValue.toFixed(2)}% annual growth`}</strong><p>{growthValue === null ? 'The surrounding market needs a verified annual-growth observation.' : 'This is the latest normalized market observation, not a forecast of what this property will earn.'}</p></article><article><span>03 / Confidence</span><strong>{unavailable.length ? `${unavailable.length} inputs unavailable` : 'All score inputs available'}</strong><p>Missing score components are excluded rather than estimated. Open the profile below to inspect each methodology.</p></article></div></section>
+}
 function Fact({ label, value }: { label: string; value: string | null | undefined }) { return <div><dt>{label}</dt><dd>{value ?? 'Unavailable'}</dd></div> }
 function PropertyState({ children, error = false }: { children: string; error?: boolean }) { return <main className={`property-state${error ? ' property-state--error' : ''}`}>{children}<Link to="/explore">Return to Explore</Link></main> }
