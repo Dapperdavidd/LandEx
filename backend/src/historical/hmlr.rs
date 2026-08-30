@@ -59,7 +59,7 @@ impl PricePaidTransaction {
             value => return Err(PricePaidParseError::InvalidCode("new_build", value)),
         };
         let tenure = code(6)?;
-        if !matches!(tenure, 'F' | 'L') {
+        if !matches!(tenure, 'F' | 'L' | 'U') {
             return Err(PricePaidParseError::InvalidCode("tenure", tenure));
         }
         let ppd_category = code(14)?;
@@ -181,5 +181,28 @@ mod tests {
             PricePaidTransaction::from_record(&row),
             Err(PricePaidParseError::InvalidCode("property_type", 'X'))
         ));
+    }
+
+    #[test]
+    fn preserves_an_unclassified_historical_tenure() {
+        let row = StringRecord::from(vec![
+            "{A1E6F85A-7D47-4C7B-8A6A-000000000002}",
+            "95000",
+            "1995-01-03 00:00",
+            "",
+            "O",
+            "N",
+            "U",
+            "1",
+            "",
+            "HIGH STREET",
+            "",
+            "LONDON",
+            "",
+            "GREATER LONDON",
+            "A",
+            "A",
+        ]);
+        assert_eq!(PricePaidTransaction::from_record(&row).unwrap().tenure, 'U');
     }
 }
