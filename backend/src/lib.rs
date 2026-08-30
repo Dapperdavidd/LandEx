@@ -4,6 +4,7 @@ pub mod config;
 pub mod domain;
 pub mod error;
 pub mod fx;
+pub mod historical;
 pub mod ingestion;
 pub mod investment;
 pub mod location_intelligence;

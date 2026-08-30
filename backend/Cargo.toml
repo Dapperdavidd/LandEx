@@ -24,6 +24,7 @@ tracing = "0.1"
 tracing-actix-web = "0.7"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 chrono = { version = "0.4", features = ["serde"] }
+csv = "1"
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
