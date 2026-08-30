@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DataLabel } from '../components/DataLabel'
 import { MarketNumber } from '../components/MarketNumber'
 import { useMarkets } from '../hooks/useMarkets'
 import { formatMoney, formatPercent } from '../lib/format'
 import { Link } from 'react-router-dom'
+import { apiRequest } from '../lib/api'
+import type { MarketDetail, MarketMetric } from '../types/market'
 
 const metricOptions = ['Price', 'Yield', 'Growth', 'Demand'] as const
 
@@ -12,6 +14,9 @@ export function MarketsPage() {
   const [metric, setMetric] = useState<(typeof metricOptions)[number]>('Price')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = markets.status === 'ready' ? markets.data.items.find((market) => market.id === selectedId) ?? markets.data.items[0] : null
+  const marketId = selected?.id
+  const [selectedDetail, setSelectedDetail] = useState<MarketDetail | null>(null)
+  useEffect(() => { if (!marketId) return; const controller = new AbortController(); apiRequest<MarketDetail>(`/markets/${marketId}?history_limit=60`, { signal: controller.signal }).then(setSelectedDetail).catch(() => setSelectedDetail(null)); return () => controller.abort() }, [marketId])
 
   return (
     <main className="market-page market-dashboard">
@@ -87,7 +92,7 @@ export function MarketsPage() {
       </div>
       <aside className="selected-market-panel" aria-label="Selected market">
         <div className="selected-market-panel__head"><DataLabel>Selected market</DataLabel>{selected && <Link to={`/markets/${selected.id}`}>Full analysis ↗</Link>}</div>
-        {selected ? <><div className="selected-market-panel__visual"><div><span>{selected.location_name}</span><small>{selected.country_code} / {selected.property_type ?? 'ALL PROPERTY'}</small></div></div><div className="selected-market-panel__identity"><h2>{selected.location_name}</h2><p>{selected.country_code} · {selected.property_type ?? 'Residential market'}</p></div><div className="selected-market-panel__price"><div><DataLabel>Median observed price</DataLabel><strong>{formatMoney(selected.latest.median_sale_price, selected.latest.currency)}</strong></div><span className={Number(selected.latest.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(selected.latest.annual_growth_percent)}<small>Annual growth</small></span></div><dl className="selected-market-panel__metrics"><div><dt>Gross yield</dt><dd>{formatPercent(selected.latest.gross_yield_percent)}</dd></div><div><dt>Monthly rent</dt><dd>{formatMoney(selected.latest.median_rent_monthly, selected.latest.currency)}</dd></div><div><dt>Inventory</dt><dd>{selected.latest.active_inventory ?? '—'}</dd></div><div><dt>Observed</dt><dd>{selected.latest.observed_on ?? '—'}</dd></div></dl><div className="selected-market-panel__actions"><Link to={`/markets/${selected.id}`}>Study market</Link><Link to={`/explore?location_id=${selected.location_id}&limit=20`}>Explore assets</Link></div><p className="selected-market-panel__note">This is a research view from normalized observations, not an investment offering.</p></> : <div className="selected-market-panel__empty">Select a market point to study its current observations.</div>}
+        {selected ? <><div className="selected-market-panel__visual"><div><span>{selected.location_name}</span><small>{selected.country_code} / {selected.property_type ?? 'ALL PROPERTY'}</small></div></div><div className="selected-market-panel__identity"><h2>{selected.location_name}</h2><p>{selected.country_code} · {selected.property_type ?? 'Residential market'}</p></div><div className="selected-market-panel__price"><div><DataLabel>Median observed price</DataLabel><strong>{formatMoney(selected.latest.median_sale_price, selected.latest.currency)}</strong></div><span className={Number(selected.latest.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(selected.latest.annual_growth_percent)}<small>Annual growth</small></span></div><dl className="selected-market-panel__metrics"><div><dt>Gross yield</dt><dd>{formatPercent(selected.latest.gross_yield_percent)}</dd></div><div><dt>Monthly rent</dt><dd>{formatMoney(selected.latest.median_rent_monthly, selected.latest.currency)}</dd></div><div><dt>Inventory</dt><dd>{selected.latest.active_inventory ?? '—'}</dd></div><div><dt>Observed</dt><dd>{selected.latest.observed_on ?? '—'}</dd></div></dl><div className="selected-market-panel__chart"><DataLabel>Observed price history</DataLabel>{selectedDetail ? <CompactMarketChart history={selectedDetail.history} /> : <p>Loading real observations…</p>}</div><div className="selected-market-panel__actions"><Link to={`/markets/${selected.id}`}>Study market</Link><Link to={`/explore?location_id=${selected.location_id}&limit=20`}>Explore assets</Link></div><p className="selected-market-panel__note">This is a research view from normalized observations, not an investment offering.</p></> : <div className="selected-market-panel__empty">Select a market point to study its current observations.</div>}
       </aside>
     </main>
   )
@@ -103,3 +108,4 @@ function mapValue(metric: (typeof metricOptions)[number], market: { latest: { me
 function MarketState({ message, error = false }: { message: string; error?: boolean }) {
   return <div className={`market-state${error ? ' market-state--error' : ''}`}>{message}</div>
 }
+function CompactMarketChart({ history }: { history: MarketMetric[] }) { const points = [...history].reverse(); const values = points.map((point) => Number(point.median_sale_price)).filter(Number.isFinite); if (values.length < 2) return <p>More verified observations are needed before a trend can be drawn.</p>; const min = Math.min(...values), max = Math.max(...values), spread = max - min || 1; const path = values.map((value, index) => `${index ? 'L' : 'M'} ${(index / (values.length - 1)) * 100} ${92 - ((value - min) / spread) * 78}`).join(' '); return <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Observed market price history"><path className="compact-market-chart__area" d={`${path} L 100 100 L 0 100 Z`} /><path className="compact-market-chart__line" d={path} /></svg> }
