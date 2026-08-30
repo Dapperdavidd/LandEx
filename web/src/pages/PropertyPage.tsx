@@ -11,6 +11,7 @@ import type { WatchlistSummary } from '../types/property'
 export function PropertyPage() {
   const { id } = useParams(); const route = useLocation(); const auth = useAuth(); const detail = usePropertyDetail(id)
   const [watchState, setWatchState] = useState<'idle' | 'saving' | 'saved'>('idle'); const [actionError, setActionError] = useState<string | null>(null)
+  const [activeMedia, setActiveMedia] = useState(0)
   if (detail.status === 'loading') return <PropertyState>Loading asset intelligence…</PropertyState>
   if (detail.status === 'error') return <PropertyState error>{detail.message}</PropertyState>
   const { property, history, score, location } = detail.data
@@ -29,10 +30,12 @@ export function PropertyPage() {
   }
   return <main className="property-page">
     <header className="asset-header"><div><DataLabel>03 / Property asset</DataLabel><p>{property.location_name} / {property.country_code} / {property.property_type}</p><h1>{title}</h1></div><div className="asset-header__quote"><DataLabel>Current asking price</DataLabel><strong>{formatMoney(property.price, property.currency)}</strong><span className={property.annual_growth_percent === null ? '' : Number(property.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(property.annual_growth_percent)} / 12M</span></div></header>
+    <section className={`asset-media${property.media_urls.length ? '' : ' asset-media--empty'}`} aria-label="Provider property media">{property.media_urls.length ? <><img src={property.media_urls[activeMedia] ?? property.media_urls[0]} alt={`${title} supplied by ${property.source_name}`} referrerPolicy="no-referrer" /><div className="asset-media__index"><DataLabel>Provider media / {activeMedia + 1} of {property.media_urls.length}</DataLabel>{property.media_urls.length > 1 && <div>{property.media_urls.slice(0, 8).map((url, index) => <button className={index === activeMedia ? 'is-active' : ''} type="button" onClick={() => setActiveMedia(index)} key={url} aria-label={`Show provider image ${index + 1}`} />)}</div>}</div></> : <div><DataLabel>Provider media unavailable</DataLabel><strong>{property.location_name}</strong><p>LandEX has no licensed image for this record. The asset data remains available for research.</p></div>}</section>
     <section className="asset-actions" aria-label="Property actions">
       {auth.status === 'authenticated' ? <button type="button" onClick={saveToWatchlist} disabled={watchState !== 'idle'}>{watchState === 'saved' ? 'Saved to watchlist' : watchState === 'saving' ? 'Saving…' : 'Add to watchlist'}</button> : <Link to="/access" state={{ from: route.pathname }}>Sign in to watch</Link>}
       <Link className="asset-actions__primary" to={auth.status === 'authenticated' ? `/simulate?property=${property.id}` : '/access'} state={auth.status === 'authenticated' ? undefined : { from: `/simulate?property=${property.id}` }}>Paper invest ↗</Link>
       {property.source_url && <a href={property.source_url} target="_blank" rel="noreferrer">View source ↗</a>}
+      <span className="asset-source">Source / {property.source_name}</span>
       {actionError && <span role="alert">{actionError}</span>}
     </section>
     <section className="asset-metrics"><Metric label="Rental yield" value={formatPercent(property.gross_yield_percent)} /><Metric label="Annual growth" value={formatPercent(property.annual_growth_percent)} signal /><Metric label="Investment score" value={score.overall_score ?? '—'} /><Metric label="Last observed" value={new Date(property.last_seen_at).toLocaleDateString()} /></section>

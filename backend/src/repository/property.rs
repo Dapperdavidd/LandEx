@@ -2,6 +2,7 @@ use crate::investment::{LocationFeatureCounts, PropertyScoreInputs};
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
+use serde_json::Value;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -32,6 +33,7 @@ impl PropertyRepository {
                 p.bathrooms,
                 p.area_sqm,
                 p.year_built,
+                p.attributes,
                 loc.id AS location_id,
                 loc.name AS location_name,
                 loc.country_code,
@@ -43,6 +45,8 @@ impl PropertyRepository {
                 l.price_period,
                 l.source_url,
                 l.last_seen_at,
+                provider.slug AS source_slug,
+                provider.name AS source_name,
                 (latest_rent.rental_price_monthly * 12 * 100 / latest_sale.price) AS gross_yield_percent,
                 latest_market.annual_growth_percent,
                 latest_score.overall_score,
@@ -50,6 +54,7 @@ impl PropertyRepository {
             FROM listings l
             INNER JOIN properties p ON p.id = l.property_id
             INNER JOIN locations loc ON loc.id = p.location_id
+            INNER JOIN providers provider ON provider.id = l.provider_id
             LEFT JOIN LATERAL (
                 SELECT rental_price_monthly FROM property_observations
                 WHERE property_id = p.id AND rental_price_monthly IS NOT NULL
@@ -112,6 +117,7 @@ impl PropertyRepository {
                 p.bathrooms,
                 p.area_sqm,
                 p.year_built,
+                p.attributes,
                 loc.id AS location_id,
                 loc.name AS location_name,
                 loc.country_code,
@@ -123,6 +129,8 @@ impl PropertyRepository {
                 l.price_period,
                 l.source_url,
                 l.last_seen_at,
+                provider.slug AS source_slug,
+                provider.name AS source_name,
                 (latest_rent.rental_price_monthly * 12 * 100 / latest_sale.price) AS gross_yield_percent,
                 latest_market.annual_growth_percent,
                 latest_score.overall_score,
@@ -130,6 +138,7 @@ impl PropertyRepository {
             FROM properties p
             INNER JOIN locations loc ON loc.id = p.location_id
             INNER JOIN listings l ON l.property_id = p.id
+            INNER JOIN providers provider ON provider.id = l.provider_id
             LEFT JOIN LATERAL (
                 SELECT rental_price_monthly FROM property_observations
                 WHERE property_id = p.id AND rental_price_monthly IS NOT NULL
@@ -319,6 +328,7 @@ struct PropertyListRow {
     bathrooms: Option<Decimal>,
     area_sqm: Option<Decimal>,
     year_built: Option<i16>,
+    attributes: Value,
     location_id: Uuid,
     location_name: String,
     country_code: String,
@@ -330,6 +340,8 @@ struct PropertyListRow {
     price_period: String,
     source_url: Option<String>,
     last_seen_at: DateTime<Utc>,
+    source_slug: String,
+    source_name: String,
     gross_yield_percent: Option<Decimal>,
     annual_growth_percent: Option<Decimal>,
     overall_score: Option<Decimal>,
@@ -372,6 +384,9 @@ pub struct PropertyListItem {
     pub price_period: String,
     pub source_url: Option<String>,
     pub last_seen_at: DateTime<Utc>,
+    pub source_slug: String,
+    pub source_name: String,
+    pub media_urls: Vec<String>,
     #[serde(with = "rust_decimal::serde::str_option")]
     pub gross_yield_percent: Option<Decimal>,
     #[serde(with = "rust_decimal::serde::str_option")]
@@ -404,11 +419,33 @@ impl From<PropertyListRow> for PropertyListItem {
             price_period: row.price_period,
             source_url: row.source_url,
             last_seen_at: row.last_seen_at,
+            source_slug: row.source_slug,
+            source_name: row.source_name,
+            media_urls: media_urls(&row.attributes),
             gross_yield_percent: row.gross_yield_percent,
             annual_growth_percent: row.annual_growth_percent,
             overall_score: row.overall_score,
         }
     }
+}
+
+fn media_urls(attributes: &Value) -> Vec<String> {
+    attributes
+        .get("images")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|image| {
+            image.as_str().or_else(|| {
+                ["url", "src", "image_url", "imageUrl"]
+                    .into_iter()
+                    .find_map(|key| image.get(key).and_then(Value::as_str))
+            })
+        })
+        .filter(|url| url.starts_with("https://"))
+        .take(20)
+        .map(str::to_owned)
+        .collect()
 }
 
 #[derive(Debug, Serialize)]
