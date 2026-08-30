@@ -10,9 +10,12 @@ const metricOptions = ['Price', 'Yield', 'Growth', 'Demand'] as const
 export function MarketsPage() {
   const markets = useMarkets(100)
   const [metric, setMetric] = useState<(typeof metricOptions)[number]>('Price')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selected = markets.status === 'ready' ? markets.data.items.find((market) => market.id === selectedId) ?? markets.data.items[0] : null
 
   return (
-    <main className="market-page">
+    <main className="market-page market-dashboard">
+      <div className="market-dashboard__main">
       <section className="market-hero" aria-labelledby="market-title">
         <div className="market-hero__heading">
           <DataLabel>01 / Global market</DataLabel>
@@ -38,7 +41,7 @@ export function MarketsPage() {
         <div className="world-field" aria-label={`Market map showing ${metric.toLowerCase()} observations`}>
           <div className="world-field__grid" />
           <span className="continent continent--americas">AMERICAS</span><span className="continent continent--europe">EUROPE</span><span className="continent continent--africa">AFRICA</span><span className="continent continent--asia">ASIA</span>
-          {markets.status === 'ready' && markets.data.items.filter((market) => market.latitude !== null && market.longitude !== null).map((market) => <Link className={`market-map-point market-map-point--${metric.toLowerCase()}`} style={{ left: `${((market.longitude! + 180) / 360) * 100}%`, top: `${((90 - market.latitude!) / 180) * 100}%` }} to={`/markets/${market.id}`} key={market.id}><i /><span><strong>{market.location_name}</strong><small>{mapValue(metric, market)}</small></span></Link>)}
+          {markets.status === 'ready' && markets.data.items.filter((market) => market.latitude !== null && market.longitude !== null).map((market) => <button className={`market-map-point market-map-point--${metric.toLowerCase()}${selected?.id === market.id ? ' is-selected' : ''}`} style={{ left: `${((market.longitude! + 180) / 360) * 100}%`, top: `${((90 - market.latitude!) / 180) * 100}%` }} onClick={() => setSelectedId(market.id)} key={market.id}><i /><span><strong>{market.location_name}</strong><small>{mapValue(metric, market)}</small></span></button>)}
           <div className="world-field__axis"><span>180°W</span><span>0°</span><span>180°E</span></div>
         </div>
         <p className="availability-note">{metric === 'Demand' ? 'Demand requires a future source-backed methodology.' : 'Points use canonical location coordinates. A point is omitted when the source location has no coordinate.'}</p>
@@ -65,7 +68,7 @@ export function MarketsPage() {
               <span>Market</span><span>Median price</span><span>Yield</span><span>Growth</span><span>Inventory</span>
             </div>
             {markets.data.items.slice(0, 8).map((market, index) => (
-              <Link className="market-row" role="row" to={`/markets/${market.id}`} key={market.id}>
+              <button className={`market-row${selected?.id === market.id ? ' is-selected' : ''}`} role="row" onClick={() => setSelectedId(market.id)} key={market.id}>
                 <div className="market-row__identity">
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <div><strong>{market.location_name}</strong><small>{market.country_code} / {market.property_type ?? 'ALL PROPERTY'}</small></div>
@@ -76,11 +79,16 @@ export function MarketsPage() {
                   {formatPercent(market.latest.annual_growth_percent)}
                 </span>
                 <span>{market.latest.active_inventory ?? '—'}</span>
-              </Link>
+              </button>
             ))}
           </div>
         )}
       </section>
+      </div>
+      <aside className="selected-market-panel" aria-label="Selected market">
+        <div className="selected-market-panel__head"><DataLabel>Selected market</DataLabel>{selected && <Link to={`/markets/${selected.id}`}>Full analysis ↗</Link>}</div>
+        {selected ? <><div className="selected-market-panel__visual"><div><span>{selected.location_name}</span><small>{selected.country_code} / {selected.property_type ?? 'ALL PROPERTY'}</small></div></div><div className="selected-market-panel__identity"><h2>{selected.location_name}</h2><p>{selected.country_code} · {selected.property_type ?? 'Residential market'}</p></div><div className="selected-market-panel__price"><div><DataLabel>Median observed price</DataLabel><strong>{formatMoney(selected.latest.median_sale_price, selected.latest.currency)}</strong></div><span className={Number(selected.latest.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(selected.latest.annual_growth_percent)}<small>Annual growth</small></span></div><dl className="selected-market-panel__metrics"><div><dt>Gross yield</dt><dd>{formatPercent(selected.latest.gross_yield_percent)}</dd></div><div><dt>Monthly rent</dt><dd>{formatMoney(selected.latest.median_rent_monthly, selected.latest.currency)}</dd></div><div><dt>Inventory</dt><dd>{selected.latest.active_inventory ?? '—'}</dd></div><div><dt>Observed</dt><dd>{selected.latest.observed_on ?? '—'}</dd></div></dl><div className="selected-market-panel__actions"><Link to={`/markets/${selected.id}`}>Study market</Link><Link to={`/explore?location_id=${selected.location_id}&limit=20`}>Explore assets</Link></div><p className="selected-market-panel__note">This is a research view from normalized observations, not an investment offering.</p></> : <div className="selected-market-panel__empty">Select a market point to study its current observations.</div>}
+      </aside>
     </main>
   )
 }

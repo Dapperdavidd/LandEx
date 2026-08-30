@@ -38,7 +38,7 @@ export function TerminalShell({ children }: { children: ReactNode }) {
       <a className="skip-link" href="#terminal-content">Skip to market content</a>
       <aside className="nav-rail" aria-label="Primary navigation">
         <NavLink className="brand" to="/" aria-label="LandEX home">
-          L<span>X</span>
+          LANDE<span>X</span>
         </NavLink>
         <nav className="nav-rail__links">
           {links.map(([to, label, index]) => (
