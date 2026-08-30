@@ -6,6 +6,8 @@ import { formatMoney, formatPercent } from '../lib/format'
 import { Link } from 'react-router-dom'
 import { apiRequest } from '../lib/api'
 import type { MarketDetail, MarketMetric } from '../types/market'
+import { WorldGeometry } from '../components/WorldGeometry'
+import { projectMarketPoint } from '../lib/world-geometry'
 
 const metricOptions = ['Price', 'Yield', 'Growth', 'Demand'] as const
 
@@ -45,8 +47,8 @@ export function MarketsPage() {
         </div>
         <div className="world-field" aria-label={`Market map showing ${metric.toLowerCase()} observations`}>
           <div className="world-field__grid" />
-          <span className="continent continent--americas">AMERICAS</span><span className="continent continent--europe">EUROPE</span><span className="continent continent--africa">AFRICA</span><span className="continent continent--asia">ASIA</span>
-          {markets.status === 'ready' && markets.data.items.filter((market) => market.latitude !== null && market.longitude !== null).map((market) => <button className={`market-map-point market-map-point--${metric.toLowerCase()}${selected?.id === market.id ? ' is-selected' : ''}`} style={{ left: `${((market.longitude! + 180) / 360) * 100}%`, top: `${((90 - market.latitude!) / 180) * 100}%` }} onClick={() => setSelectedId(market.id)} key={market.id}><i /><span><strong>{market.location_name}</strong><small>{mapValue(metric, market)}</small></span></button>)}
+          <WorldGeometry />
+          {markets.status === 'ready' && markets.data.items.filter((market) => market.latitude !== null && market.longitude !== null).map((market) => { const point = projectMarketPoint(market.longitude!, market.latitude!); return point && <button className={`market-map-point market-map-point--${metric.toLowerCase()}${selected?.id === market.id ? ' is-selected' : ''}`} style={point} onClick={() => setSelectedId(market.id)} key={market.id}><i /><span><strong>{market.location_name}</strong><small>{mapValue(metric, market)}</small></span></button> })}
           <div className="world-field__axis"><span>180°W</span><span>0°</span><span>180°E</span></div>
         </div>
         <p className="availability-note">{metric === 'Demand' ? 'Demand requires a future source-backed methodology.' : 'Points use canonical location coordinates. A point is omitted when the source location has no coordinate.'}</p>
