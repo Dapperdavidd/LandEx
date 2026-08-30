@@ -20,6 +20,9 @@ export interface PropertyListItem {
   price_period: string
   source_url: string | null
   last_seen_at: string
+  source_slug: string
+  source_name: string
+  media_urls: string[]
   gross_yield_percent: string | null
   annual_growth_percent: string | null
   overall_score: string | null
