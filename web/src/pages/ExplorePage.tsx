@@ -3,9 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
 import { DataLabel } from '../components/DataLabel'
 import { useProperties } from '../hooks/useProperties'
+import { useInstruments } from '../hooks/useInstruments'
 import { apiRequest } from '../lib/api'
 import { formatMoney, formatPercent } from '../lib/format'
 import type { PropertyListItem, SavedSearch } from '../types/property'
+import type { InstrumentDetail, InvestmentInstrument } from '../types/instrument'
 
 const fields = ['country_code', 'currency', 'property_type', 'listing_type', 'min_price', 'max_price', 'min_yield_percent', 'min_growth_percent', 'min_score'] as const
 const choices = { currency: [['USD', 'US dollar'], ['NGN', 'Nigerian naira'], ['GBP', 'British pound'], ['EUR', 'Euro'], ['AED', 'UAE dirham'], ['CAD', 'Canadian dollar'], ['AUD', 'Australian dollar']], property_type: [['apartment', 'Apartment'], ['house', 'House'], ['commercial', 'Commercial'], ['land', 'Land'], ['hotel', 'Hotel'], ['retail', 'Retail'], ['industrial', 'Industrial']], listing_type: [['sale', 'For sale'], ['rent', 'For rent'], ['shortlet', 'Shortlet']], min_yield_percent: [['4', '4%+'], ['6', '6%+'], ['8', '8%+'], ['10', '10%+']], min_growth_percent: [['3', '3%+'], ['5', '5%+'], ['8', '8%+'], ['12', '12%+']], min_score: [['50', '50+'], ['65', '65+'], ['75', '75+'], ['85', '85+']] } as const
@@ -17,6 +19,7 @@ export function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams({ limit: '20' })
   const query = useMemo(() => new URLSearchParams(searchParams), [searchParams])
   const properties = useProperties(query)
+  const view = searchParams.get('view') === 'opportunities' ? 'opportunities' : 'markets'
   const [saveOpen, setSaveOpen] = useState(false)
   const [searchName, setSearchName] = useState('')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
@@ -28,7 +31,7 @@ export function ExplorePage() {
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const next = new URLSearchParams({ limit: '20' })
+    const next = new URLSearchParams({ view: 'opportunities', limit: '20' })
     fields.forEach((field) => {
       const value = String(form.get(field) ?? '').trim()
       if (value) next.set(field, value)
@@ -55,7 +58,9 @@ export function ExplorePage() {
   }
 
   return <main className="explore-page">
-    <header className="explore-header"><div><DataLabel>02 / Opportunity research</DataLabel><h1>Find an<br />opportunity.</h1></div><div className="explore-header__aside"><span>{properties.status === 'ready' ? properties.data.total : '—'}</span><DataLabel>Matching active listings</DataLabel></div></header>
+    <header className="explore-header"><div><DataLabel>02 / Global research universe</DataLabel><h1>Find an<br />opportunity.</h1></div><div className="explore-header__aside"><span>{view === 'opportunities' && properties.status === 'ready' ? properties.data.total : '405'}</span><DataLabel>{view === 'opportunities' ? 'Observed active listings' : 'Official UK market instruments'}</DataLabel></div></header>
+    <nav className="universe-switch" aria-label="Research universe"><button className={view === 'markets' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'markets', limit: '100' })}>Market instruments <small>Verified price history</small></button><button className={view === 'opportunities' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'opportunities', limit: '20' })}>Property research <small>Active listings, not offerings</small></button></nav>
+    {view === 'markets' ? <MarketInstrumentUniverse /> : <>
     <form className="filter-terminal" onSubmit={applyFilters}>
       {(['country_code', 'currency', 'property_type', 'listing_type'] as PickerField[]).map((field) => <PickerButton field={field} key={field} label={field === 'country_code' ? 'Country' : field === 'property_type' ? 'Asset' : field === 'listing_type' ? 'Listing' : 'Currency'} value={searchParams.get(field) ?? ''} display={labelFor(field)} onClick={() => setPicker(field)} />)}
       <label><span>Min price</span><input name="min_price" inputMode="decimal" defaultValue={searchParams.get('min_price') ?? ''} placeholder="0" /></label>
@@ -64,20 +69,48 @@ export function ExplorePage() {
       <button type="submit">Run search <span>↗</span></button>
     </form>
     {picker && <FilterPicker field={picker} countries={countries} selected={searchParams.get(picker) ?? ''} onClose={() => setPicker(null)} onSelect={(value) => { const next = new URLSearchParams(searchParams); if (value) next.set(picker, value); else next.delete(picker); next.set('limit', '20'); setSearchParams(next); setPicker(null) }} />}
-    <div className="explore-actions"><DataLabel>Results / latest normalized observations</DataLabel><div>{auth.status === 'authenticated' ? <button type="button" onClick={() => { setSaveOpen((value) => !value); setSaveMessage(null) }}>Save this search</button> : <Link to="/access" state={{ from: `/explore?${searchParams}` }}>Sign in to save</Link>}<button type="button" onClick={() => setSearchParams({ limit: '20' })}>Clear filters</button></div></div>
+    <div className="explore-actions"><DataLabel>Results / latest normalized observations</DataLabel><div>{auth.status === 'authenticated' ? <button type="button" onClick={() => { setSaveOpen((value) => !value); setSaveMessage(null) }}>Save this search</button> : <Link to="/access" state={{ from: `/explore?${searchParams}` }}>Sign in to save</Link>}<button type="button" onClick={() => setSearchParams({ view: 'opportunities', limit: '20' })}>Clear filters</button></div></div>
     {saveOpen && <form className="save-search" onSubmit={saveSearch}><label><span>Search name</span><input required maxLength={100} value={searchName} onChange={(event) => setSearchName(event.target.value)} placeholder="e.g. Lagos income watch" /></label><button type="submit">Save</button></form>}
     {saveMessage && <p className="save-message" role="status">{saveMessage}</p>}
     {properties.status === 'loading' && <ExploreState>Scanning normalized inventory…</ExploreState>}
     {properties.status === 'error' && <ExploreState error>{properties.message}</ExploreState>}
     {properties.status === 'ready' && properties.data.items.length === 0 && <ExploreState>No active properties match this market view.</ExploreState>}
     {properties.status === 'ready' && properties.data.items.length > 0 && <PropertyResults properties={properties.data.items} />}
+    </>}
   </main>
+}
+
+function MarketInstrumentUniverse() {
+  const instruments = useInstruments('GB', 100)
+  const [selected, setSelected] = useState<InvestmentInstrument | null>(null)
+  const [loadedDetail, setLoadedDetail] = useState<{ id: string; value: InstrumentDetail } | null>(null)
+  const effectiveSelected = selected ?? (instruments.status === 'ready' ? instruments.data.items[0] ?? null : null)
+  useEffect(() => {
+    if (!effectiveSelected) return
+    const controller = new AbortController()
+    const id = effectiveSelected.id
+    apiRequest<InstrumentDetail>(`/instruments/${id}?history_limit=120`, { signal: controller.signal }).then((value) => setLoadedDetail({ id, value })).catch(() => undefined)
+    return () => controller.abort()
+  }, [effectiveSelected])
+  if (instruments.status === 'loading') return <ExploreState>Loading official market instruments…</ExploreState>
+  if (instruments.status === 'error') return <ExploreState error>{instruments.message}</ExploreState>
+  const detail = loadedDetail && loadedDetail.id === effectiveSelected?.id ? loadedDetail.value : null
+  return <section className="instrument-universe"><div className="instrument-universe__intro"><div><DataLabel>Source-backed instruments</DataLabel><h2>Markets you can study<br />and paper trade.</h2></div><p>These are market proxies, not properties for sale. Values follow the official UK House Price Index. Real-money investing is disabled.</p></div><div className="instrument-terminal"><div className="instrument-ledger"><div className="instrument-ledger__head"><span>Instrument</span><span>Latest value</span><span>12M</span><span>Observed</span></div>{instruments.data.items.map((instrument) => <button className={effectiveSelected?.id === instrument.id ? 'is-selected' : ''} type="button" key={instrument.id} onClick={() => setSelected(instrument)}><div><strong>{instrument.name}</strong><small>MARKET PROXY · {String(instrument.metadata.area_code ?? instrument.country_code)} · PAPER</small></div><span>{formatMoney(instrument.value, instrument.currency)}</span><span className={Number(instrument.annual_change_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(instrument.annual_change_percent)}</span><span>{instrument.observed_on ?? '—'}</span></button>)}</div><aside className="instrument-inspector">{effectiveSelected ? <><DataLabel>Selected instrument</DataLabel><h3>{effectiveSelected.name}</h3><p>{effectiveSelected.valuation_method}</p><div className="instrument-inspector__quote"><strong>{formatMoney(effectiveSelected.value, effectiveSelected.currency)}</strong><span className={Number(effectiveSelected.annual_change_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(effectiveSelected.annual_change_percent)}<small>12 month change</small></span></div><dl><div><dt>Classification</dt><dd>Market proxy</dd></div><div><dt>Liquidity</dt><dd>Index proxy</dd></div><div><dt>Mode</dt><dd>Paper only</dd></div><div><dt>Real money</dt><dd>Disabled</dd></div></dl><div className="instrument-inspector__chart"><DataLabel>Official price history / 10Y</DataLabel>{detail ? <InstrumentChart detail={detail} /> : <p>Loading verified history…</p>}</div>{effectiveSelected.source_url && <a href={effectiveSelected.source_url} target="_blank" rel="noreferrer">Verify official source ↗</a>}</> : null}</aside></div></section>
+}
+
+function InstrumentChart({ detail }: { detail: InstrumentDetail }) {
+  const history = [...detail.history].reverse()
+  const values = history.map((point) => Number(point.value)).filter(Number.isFinite)
+  if (values.length < 2) return <p>More observations are required.</p>
+  const min = Math.min(...values), max = Math.max(...values), spread = max - min || 1
+  const path = values.map((value, index) => `${index ? 'L' : 'M'} ${(index / (values.length - 1)) * 100} ${92 - ((value - min) / spread) * 78}`).join(' ')
+  return <><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Official market price history"><path className="instrument-chart__area" d={`${path} L 100 100 L 0 100 Z`} /><path className="instrument-chart__line" d={path} /></svg><div><span>{history[0]?.observed_on.slice(0, 4)}</span><span>{history.at(-1)?.observed_on.slice(0, 4)}</span></div></>
 }
 
 function PickerButton({ field, label, value, display, onClick }: { field: PickerField; label: string; value: string; display: string; onClick: () => void }) { return <label className="filter-picker-button"><span>{label}</span><input type="hidden" name={field} value={value} /><button type="button" onClick={onClick}>{display}<b>+</b></button></label> }
 function FilterPicker({ field, countries, selected, onClose, onSelect }: { field: PickerField; countries: LocationOption[]; selected: string; onClose: () => void; onSelect: (value: string) => void }) { const options: readonly (readonly [string, string])[] = field === 'country_code' ? countries.map((country) => [country.country_code, country.name] as const) : choices[field]; const title = field === 'country_code' ? 'Choose a country' : field === 'property_type' ? 'Choose an asset type' : field === 'listing_type' ? 'Choose a listing type' : `Choose ${field.replace('min_', '').replace('_percent', '')}`; return <div className="filter-picker-layer" role="dialog" aria-modal="true" aria-label={title} onMouseDown={onClose}><section className="filter-picker-card" onMouseDown={(event) => event.stopPropagation()}><header><DataLabel>Explore filter</DataLabel><h2>{title}</h2><button type="button" onClick={onClose}>Close ×</button></header><div className="filter-picker-options"><button className={!selected ? 'is-selected' : ''} type="button" onClick={() => onSelect('')}>Any / no filter</button>{options.length ? options.map(([value, label]) => <button className={selected === value ? 'is-selected' : ''} type="button" key={value} onClick={() => onSelect(value)}>{label}</button>) : <p>No countries with normalized inventory are available yet.</p>}</div></section></div> }
 
 function PropertyResults({ properties }: { properties: PropertyListItem[] }) {
-  return <section className="property-results" aria-label="Property results"><div className="property-results__head"><span>Asset</span><span>Price</span><span>Yield</span><span>Growth</span><span>Score</span></div>{properties.map((property, index) => <Link className="property-result" to={`/properties/${property.id}`} key={property.listing_id}>{property.media_urls[0] && <span className="property-result__preview" aria-hidden="true"><img src={property.media_urls[0]} alt="" referrerPolicy="no-referrer" /><small>Provider media / {property.source_name}</small></span>}<div className="property-result__identity"><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{property.address_line || `${property.property_type} / ${property.location_name}`}</strong><small>{property.location_name}, {property.country_code} · {property.listing_type} · {property.bedrooms ?? '—'} BED · {property.source_name}</small></div></div><span>{formatMoney(property.price, property.currency)}{property.price_period !== 'total' && <small>/{property.price_period}</small>}</span><span>{formatPercent(property.gross_yield_percent)}</span><span className={property.annual_growth_percent === null ? '' : Number(property.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(property.annual_growth_percent)}</span><span>{property.overall_score ?? '—'}</span></Link>)}</section>
+  return <section className="property-results" aria-label="Property results"><div className="property-results__head"><span>Observed property / research only</span><span>Listing price</span><span>Yield</span><span>Growth</span><span>Score</span></div>{properties.map((property, index) => <Link className="property-result" to={`/properties/${property.id}`} key={property.listing_id}>{property.media_urls[0] && <span className="property-result__preview" aria-hidden="true"><img src={property.media_urls[0]} alt="" referrerPolicy="no-referrer" /><small>Provider media / {property.source_name}</small></span>}<div className="property-result__identity"><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{property.address_line || `${property.property_type} / ${property.location_name}`}</strong><small>ACTIVE LISTING · NOT AN OFFERING · {property.location_name}, {property.country_code} · {property.source_name}</small></div></div><span>{formatMoney(property.price, property.currency)}{property.price_period !== 'total' && <small>/{property.price_period}</small>}</span><span>{formatPercent(property.gross_yield_percent)}</span><span className={property.annual_growth_percent === null ? '' : Number(property.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(property.annual_growth_percent)}</span><span>{property.overall_score ?? '—'}</span></Link>)}</section>
 }
 function ExploreState({ children, error = false }: { children: string; error?: boolean }) { return <div className={`explore-state${error ? ' explore-state--error' : ''}`}>{children}</div> }
