@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod fx;
 pub mod health;
+pub mod instruments;
 pub mod investment;
 pub mod locations;
 pub mod markets;

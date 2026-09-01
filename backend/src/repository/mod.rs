@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod instrument;
 pub mod location;
 pub mod location_intelligence;
 pub mod market;
