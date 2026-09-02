@@ -5,7 +5,7 @@ pub mod rayprop;
 pub mod rentcast;
 pub mod service;
 
-pub use countries_dev::CountriesDevProvider;
+pub use countries_dev::{CountriesDevCityProvider, CountriesDevProvider};
 pub use geonames::GeoNamesProvider;
 pub use provider::{
     IngestionError, PropertyProvider, ProviderListing, ProviderLocation, ProviderPage,
