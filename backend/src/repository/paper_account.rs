@@ -5,6 +5,8 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use super::instrument_portfolio::InstrumentPortfolioRepository;
+
 #[derive(Debug, thiserror::Error)]
 pub enum PaperTradeError {
     #[error("paper account was not found")]
@@ -458,6 +460,10 @@ impl PaperAccountRepository {
         let Some(performance) = self.performance(user_id, account_id).await? else {
             return Ok(None);
         };
+        let instrument_performance = InstrumentPortfolioRepository::new(self.pool.clone())
+            .performance(user_id, account_id)
+            .await?
+            .expect("paper account existence was already verified");
         let mut countries: HashMap<String, Decimal> = HashMap::new();
         let mut property_types: HashMap<String, Decimal> = HashMap::new();
         for position in &performance.positions {
@@ -466,11 +472,18 @@ impl PaperAccountRepository {
                 .entry(position.property_type.clone())
                 .or_default() += position.market_value;
         }
+        for position in &instrument_performance.positions {
+            *countries.entry(position.country_code.clone()).or_default() += position.market_value;
+            *property_types
+                .entry(position.instrument_kind.clone())
+                .or_default() += position.market_value;
+        }
+        let positions_value = performance.positions_value + instrument_performance.positions_value;
         Ok(Some(PortfolioAllocation {
             account_id,
-            positions_value: performance.positions_value,
-            by_country: allocation_slices(countries, performance.positions_value),
-            by_property_type: allocation_slices(property_types, performance.positions_value),
+            positions_value,
+            by_country: allocation_slices(countries, positions_value),
+            by_property_type: allocation_slices(property_types, positions_value),
             unavailable_dimensions: vec!["strategy".to_owned(), "risk".to_owned()],
         }))
     }
@@ -509,18 +522,27 @@ impl PaperAccountRepository {
         let Some(performance) = self.performance(user_id, account_id).await? else {
             return Ok(None);
         };
+        let instrument_performance = InstrumentPortfolioRepository::new(self.pool.clone())
+            .performance(user_id, account_id)
+            .await?
+            .expect("paper account existence was already verified");
+        let positions_value = performance.positions_value + instrument_performance.positions_value;
+        let total_value = performance.cash_balance + positions_value;
+        let total_pnl = total_value - performance.net_funding;
+        let total_return_percent = percentage(total_pnl, performance.net_funding);
+        let realized_pnl = performance.realized_pnl + instrument_performance.realized_pnl;
         let snapshot = sqlx::query_as(
             "INSERT INTO paper_account_snapshots (account_id, observed_on, base_currency, cash_balance, positions_value, total_value, net_funding, total_pnl, total_return_percent, realized_pnl) VALUES ($1, CURRENT_DATE, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (account_id, observed_on) DO UPDATE SET base_currency = EXCLUDED.base_currency, cash_balance = EXCLUDED.cash_balance, positions_value = EXCLUDED.positions_value, total_value = EXCLUDED.total_value, net_funding = EXCLUDED.net_funding, total_pnl = EXCLUDED.total_pnl, total_return_percent = EXCLUDED.total_return_percent, realized_pnl = EXCLUDED.realized_pnl, updated_at = NOW() RETURNING observed_on, base_currency, cash_balance, positions_value, total_value, net_funding, total_pnl, total_return_percent, realized_pnl",
         )
         .bind(account_id)
         .bind(&performance.base_currency)
         .bind(performance.cash_balance)
-        .bind(performance.positions_value)
-        .bind(performance.total_value)
+        .bind(positions_value)
+        .bind(total_value)
         .bind(performance.net_funding)
-        .bind(performance.total_pnl)
-        .bind(performance.total_return_percent)
-        .bind(performance.realized_pnl)
+        .bind(total_pnl)
+        .bind(total_return_percent)
+        .bind(realized_pnl)
         .fetch_one(&self.pool)
         .await?;
         Ok(Some(snapshot))
