@@ -19,7 +19,8 @@ export function ExplorePage() {
   const [searchParams, setSearchParams] = useSearchParams({ limit: '20' })
   const query = useMemo(() => new URLSearchParams(searchParams), [searchParams])
   const properties = useProperties(query)
-  const view = searchParams.get('view') === 'opportunities' ? 'opportunities' : 'markets'
+  const requestedView = searchParams.get('view')
+  const view = requestedView === 'opportunities' || requestedView === 'listed' ? requestedView : 'markets'
   const [saveOpen, setSaveOpen] = useState(false)
   const [searchName, setSearchName] = useState('')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
@@ -62,9 +63,9 @@ export function ExplorePage() {
   }
 
   return <main className="explore-page">
-    <header className="explore-header"><div><DataLabel>02 / Global research universe</DataLabel><h1>Find an<br />opportunity.</h1></div><div className="explore-header__aside"><span>{view === 'opportunities' && properties.status === 'ready' ? properties.data.total : '57'}</span><DataLabel>{view === 'opportunities' ? 'Observed active listings' : 'Countries with official BIS history'}</DataLabel></div></header>
-    <nav className="universe-switch" aria-label="Research universe"><button className={view === 'markets' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'markets', limit: '100' })}>Market instruments <small>Verified price history</small></button><button className={view === 'opportunities' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'opportunities', limit: '20' })}>Property research <small>Active listings, not offerings</small></button></nav>
-    {view === 'markets' ? <MarketInstrumentUniverse /> : <>
+    <header className="explore-header"><div><DataLabel>02 / Global research universe</DataLabel><h1>Find an<br />opportunity.</h1></div><div className="explore-header__aside"><span>{view === 'opportunities' && properties.status === 'ready' ? properties.data.total : view === 'listed' ? 'SEC' : '57'}</span><DataLabel>{view === 'opportunities' ? 'Observed active listings' : view === 'listed' ? 'Verified listed identities' : 'Countries with official BIS history'}</DataLabel></div></header>
+    <nav className="universe-switch" aria-label="Research universe"><button className={view === 'markets' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'markets', limit: '100' })}>Market instruments <small>Verified price history</small></button><button className={view === 'listed' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'listed', limit: '100' })}>Listed real estate <small>SEC-verified identities</small></button><button className={view === 'opportunities' ? 'is-active' : ''} type="button" onClick={() => setSearchParams({ view: 'opportunities', limit: '20' })}>Property research <small>Active listings, not offerings</small></button></nav>
+    {view === 'markets' ? <MarketInstrumentUniverse /> : view === 'listed' ? <ListedInstrumentUniverse /> : <>
     <form className="filter-terminal" onSubmit={applyFilters}>
       {(['country_code', 'location_id', 'currency', 'property_type', 'listing_type'] as PickerField[]).map((field) => <PickerButton field={field} key={field} label={field === 'country_code' ? 'Country' : field === 'location_id' ? 'City' : field === 'property_type' ? 'Asset' : field === 'listing_type' ? 'Listing' : 'Currency'} value={searchParams.get(field) ?? ''} display={labelFor(field)} onClick={() => setPicker(field)} />)}
       <label><span>Min price</span><input name="min_price" inputMode="decimal" defaultValue={searchParams.get('min_price') ?? ''} placeholder="0" /></label>
@@ -82,6 +83,13 @@ export function ExplorePage() {
     {properties.status === 'ready' && properties.data.items.length > 0 && <PropertyResults properties={properties.data.items} />}
     </>}
   </main>
+}
+
+function ListedInstrumentUniverse() {
+  const instruments = useInstruments('', 100, 'sec-edgar-listed-reits')
+  if (instruments.status === 'loading') return <ExploreState>Loading SEC-verified listed real-estate identities…</ExploreState>
+  if (instruments.status === 'error') return <ExploreState error>{instruments.message}</ExploreState>
+  return <section className="instrument-universe listed-universe"><div className="instrument-universe__intro"><div><DataLabel>SEC EDGAR / listed real estate</DataLabel><h2>Public-market real estate,<br />without invented quotes.</h2></div><p>Issuer names, tickers, and exchanges are verified against the SEC public catalogue. Quote history is not yet connected, so these instruments remain research-only and cannot be paper traded. Open the filing source to verify each identity.</p></div><div className="listed-ledger"><div className="listed-ledger__head"><span>Issuer</span><span>Symbol</span><span>Exchange</span><span>Coverage</span><span>Source</span></div>{instruments.data.items.map((instrument) => <article key={instrument.id}><div><strong>{instrument.name}</strong><small>LISTED SECURITY · RESEARCH ONLY · NO QUOTE SERIES</small></div><b>{instrument.symbol ?? '—'}</b><span>{instrument.exchange ?? '—'}</span><span>Identity verified</span>{instrument.source_url ? <a href={instrument.source_url} target="_blank" rel="noreferrer">SEC filing ↗</a> : <span>—</span>}</article>)}</div><p className="listed-universe__truth">Showing {instruments.data.items.length} of {instruments.data.total} conservative matches whose SEC issuer names explicitly identify them as REITs. This is not a complete U.S. REIT universe, a recommendation, or a real-money offering.</p></section>
 }
 
 function MarketInstrumentUniverse() {
