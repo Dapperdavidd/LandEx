@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, io};
+use std::{collections::BTreeMap, env, io, time::Duration};
 
 use chrono::NaiveDate;
 use landex_api::{config::Config, state::AppState};
@@ -87,7 +87,10 @@ async fn main() -> io::Result<()> {
     let client = reqwest::Client::new();
     let mut succeeded = 0usize;
     let mut failed = 0usize;
-    for target in targets {
+    for (index, target) in targets.into_iter().enumerate() {
+        if index > 0 {
+            actix_web::rt::time::sleep(Duration::from_millis(1_100)).await;
+        }
         let attempt_id = reserve_request(&state.database, provider_id, &target.symbol)
             .await
             .map_err(io::Error::other)?;
@@ -153,6 +156,7 @@ async fn load_targets(pool: &PgPool, limit: i64) -> Result<Vec<InstrumentTarget>
           AND i.instrument_kind='listed_security'
           AND i.exchange IN ('NYSE','Nasdaq')
           AND i.symbol IS NOT NULL
+          AND i.symbol NOT LIKE '%-%'
           AND (latest.latest_on IS NULL OR latest.latest_on < CURRENT_DATE)
         ORDER BY latest.latest_on NULLS FIRST, i.name, i.symbol
         LIMIT $1
