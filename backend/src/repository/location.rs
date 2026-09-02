@@ -16,6 +16,9 @@ impl LocationRepository {
         &self,
         filters: &LocationSearchFilters,
     ) -> Result<Vec<LocationSummary>, sqlx::Error> {
+        if filters.kind.as_deref() == Some("country") {
+            return self.search_countries(filters).await;
+        }
         let mut query = QueryBuilder::<Postgres>::new(
             r#"
             SELECT
@@ -53,6 +56,39 @@ impl LocationRepository {
         );
         query.push_bind(filters.limit);
 
+        query
+            .build_query_as::<LocationSummary>()
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    async fn search_countries(
+        &self,
+        filters: &LocationSearchFilters,
+    ) -> Result<Vec<LocationSummary>, sqlx::Error> {
+        let mut query = QueryBuilder::<Postgres>::new(
+            r#"
+            SELECT * FROM (
+                SELECT DISTINCT ON (loc.country_code)
+                    loc.id, loc.parent_id, loc.kind, loc.name, loc.country_code,
+                    loc.administrative_code, loc.latitude, loc.longitude, loc.population,
+                    (SELECT COUNT(*) FROM properties p WHERE p.location_id = loc.id) AS property_count,
+                    (SELECT COUNT(*) FROM markets m WHERE m.location_id = loc.id) AS market_count
+                FROM locations loc
+                WHERE loc.kind = 'country'
+            "#,
+        );
+        if let Some(query_text) = &filters.query {
+            query
+                .push(" AND loc.normalized_name ILIKE ")
+                .push_bind(format!("%{query_text}%"));
+        }
+        if let Some(country_code) = &filters.country_code {
+            query
+                .push(" AND loc.country_code = ")
+                .push_bind(country_code);
+        }
+        query.push(" ORDER BY loc.country_code, property_count DESC, market_count DESC, loc.updated_at DESC) countries ORDER BY property_count DESC, market_count DESC, name ASC LIMIT ").push_bind(filters.limit);
         query
             .build_query_as::<LocationSummary>()
             .fetch_all(&self.pool)
