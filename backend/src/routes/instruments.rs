@@ -14,6 +14,7 @@ pub struct InstrumentQuery {
     kind: Option<String>,
     status: Option<String>,
     country_code: Option<String>,
+    provider_slug: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
 }
@@ -62,11 +63,21 @@ pub async fn list(
     {
         return Err(ApiError::InvalidRequest("invalid instrument status".into()));
     }
+    if q.provider_slug.as_ref().is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 80
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    }) {
+        return Err(ApiError::InvalidRequest("invalid provider_slug".into()));
+    }
     let page = InstrumentRepository::new(state.database.clone())
         .search(&InstrumentFilters {
             kind: q.kind,
             status: q.status,
             country_code,
+            provider_slug: q.provider_slug,
             limit,
             offset,
         })

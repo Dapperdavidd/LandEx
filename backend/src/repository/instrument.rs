@@ -25,6 +25,7 @@ impl InstrumentRepository {
                    latest.observed_on, latest.value, latest.annual_change_percent,
                    latest.income_yield_percent, COUNT(*) OVER() AS total_count
             FROM investment_instruments i
+            LEFT JOIN providers provider ON provider.id = i.provider_id
             LEFT JOIN LATERAL (
                 SELECT observed_on, value, annual_change_percent, income_yield_percent
                 FROM instrument_observations
@@ -42,6 +43,9 @@ impl InstrumentRepository {
         }
         if let Some(country) = &filters.country_code {
             query.push(" AND i.country_code = ").push_bind(country);
+        }
+        if let Some(provider_slug) = &filters.provider_slug {
+            query.push(" AND provider.slug = ").push_bind(provider_slug);
         }
         query
             .push(" ORDER BY i.name, i.id LIMIT ")
@@ -114,6 +118,7 @@ pub struct InstrumentFilters {
     pub kind: Option<String>,
     pub status: Option<String>,
     pub country_code: Option<String>,
+    pub provider_slug: Option<String>,
     pub limit: i64,
     pub offset: i64,
 }
