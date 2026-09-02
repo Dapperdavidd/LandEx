@@ -1,117 +1,37 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import { DataLabel } from '../components/DataLabel'
 import { MarketNumber } from '../components/MarketNumber'
-import { useMarkets } from '../hooks/useMarkets'
-import { formatMoney, formatPercent } from '../lib/format'
-import { Link } from 'react-router-dom'
-import { apiRequest } from '../lib/api'
-import type { MarketDetail, MarketMetric } from '../types/market'
 import { WorldGeometry } from '../components/WorldGeometry'
-import { projectMarketPoint } from '../lib/world-geometry'
-import type { PropertyListItem, PropertyPage, PropertyScore } from '../types/property'
+import { useInstruments } from '../hooks/useInstruments'
+import { apiRequest } from '../lib/api'
+import { formatPercent } from '../lib/format'
+import { projectCountryName } from '../lib/world-geometry'
+import type { InstrumentDetail } from '../types/instrument'
 
-const metricOptions = ['Price', 'Yield', 'Growth', 'Demand'] as const
+const metricOptions = ['Index', 'Growth', 'Yield', 'Demand'] as const
 
 export function MarketsPage() {
-  const markets = useMarkets(100)
-  const [metric, setMetric] = useState<(typeof metricOptions)[number]>('Price')
+  const markets = useInstruments('', 100, 'bis-property-prices')
+  const [metric, setMetric] = useState<(typeof metricOptions)[number]>('Growth')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = markets.status === 'ready' ? markets.data.items.find((market) => market.id === selectedId) ?? markets.data.items[0] : null
-  const marketId = selected?.id
-  const [selectedDetail, setSelectedDetail] = useState<MarketDetail | null>(null)
-  const [selectedScore, setSelectedScore] = useState<PropertyScore | null>(null)
-  const [selectedProperty, setSelectedProperty] = useState<PropertyListItem | null>(null)
-  useEffect(() => { if (!marketId || !selected) return; const controller = new AbortController(); const propertyQuery = new URLSearchParams({ location_id: selected.location_id, listing_type: 'sale', limit: '1' }); if (selected.property_type) propertyQuery.set('property_type', selected.property_type); Promise.all([apiRequest<MarketDetail>(`/markets/${marketId}?history_limit=60`, { signal: controller.signal }), apiRequest<PropertyScore>(`/markets/${marketId}/score`, { signal: controller.signal }), apiRequest<PropertyPage>(`/properties?${propertyQuery}`, { signal: controller.signal })]).then(([detail, score, properties]) => { setSelectedDetail(detail); setSelectedScore(score); setSelectedProperty(properties.items[0] ?? null) }).catch(() => { setSelectedDetail(null); setSelectedScore(null); setSelectedProperty(null) }); return () => controller.abort() }, [marketId, selected])
+  const instruments = useMemo(() => markets.status === 'ready' ? markets.data.items : [], [markets])
+  const selected = instruments.find((item) => item.id === selectedId) ?? instruments[0] ?? null
+  const [loaded, setLoaded] = useState<{ id: string; detail: InstrumentDetail } | null>(null)
+  useEffect(() => { if (!selected) return; const controller = new AbortController(); const id = selected.id; apiRequest<InstrumentDetail>(`/instruments/${id}?history_limit=120`, { signal: controller.signal }).then((detail) => setLoaded({ id, detail })).catch(() => undefined); return () => controller.abort() }, [selected])
+  const detail = loaded && loaded.id === selected?.id ? loaded.detail : null
+  const movers = useMemo(() => [...instruments].sort((a, b) => Math.abs(Number(b.annual_change_percent)) - Math.abs(Number(a.annual_change_percent))).slice(0, 10), [instruments])
+  const breadth = useMemo(() => { const available = instruments.filter((item) => item.annual_change_percent !== null); const positive = available.filter((item) => Number(item.annual_change_percent) >= 0).length; const average = available.reduce((sum, item) => sum + Number(item.annual_change_percent), 0) / (available.length || 1); return { positive, total: available.length, score: Math.round((positive / (available.length || 1)) * 100), average } }, [instruments])
 
-  return (
-    <main className="market-page market-dashboard">
-      <div className="market-dashboard__main">
-      <section className="market-hero" aria-labelledby="market-title">
-        <div className="market-hero__heading">
-          <DataLabel>01 / Global market</DataLabel>
-          <h1 id="market-title">The physical world,<br />priced.</h1>
-        </div>
-        <div className="market-hero__statement">
-          <p>One connected view of property, place, yield and movement.</p>
-          <span>Scroll to enter the market</span>
-        </div>
-      </section>
-
-      <section className="market-canvas" aria-label="Global market visualization">
-        <div className="market-canvas__toolbar">
-          <DataLabel>World / normalized markets</DataLabel>
-          <div className="metric-switcher" aria-label="Map metric">
-            {metricOptions.map((option) => (
-              <button className={metric === option ? 'is-active' : ''} key={option} type="button" onClick={() => setMetric(option)} disabled={option === 'Demand'}>
-                {option}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="world-field" aria-label={`Market map showing ${metric.toLowerCase()} observations`}>
-          <div className="world-field__grid" />
-          <WorldGeometry />
-          {markets.status === 'ready' && markets.data.items.filter((market) => market.latitude !== null && market.longitude !== null).map((market) => { const point = projectMarketPoint(market.longitude!, market.latitude!); return point && <button className={`market-map-point market-map-point--${metric.toLowerCase()}${selected?.id === market.id ? ' is-selected' : ''}`} style={point} onClick={() => setSelectedId(market.id)} key={market.id}><i /><span><strong>{market.location_name}</strong><small>{mapValue(metric, market)}</small></span></button> })}
-          <div className="world-field__axis"><span>180°W</span><span>0°</span><span>180°E</span></div>
-        </div>
-        <p className="availability-note">{metric === 'Demand' ? 'Demand requires a future source-backed methodology.' : 'Points use canonical location coordinates. A point is omitted when the source location has no coordinate.'}</p>
-      </section>
-
-      <section className="market-feed" aria-labelledby="market-feed-title">
-        <div className="market-feed__header">
-          <div>
-            <DataLabel>Observed markets</DataLabel>
-            <h2 id="market-feed-title">Now in view</h2>
-          </div>
-          {markets.status === 'ready' && <MarketNumber compact label="NORMALIZED MARKETS" value={String(markets.data.total)} />}
-          <Link className="market-compare-link" to="/compare">Compare markets ↗</Link>
-        </div>
-
-        {markets.status === 'loading' && <MarketState message="Reading the market…" />}
-        {markets.status === 'error' && <MarketState message={markets.message} error />}
-        {markets.status === 'ready' && markets.data.items.length === 0 && (
-          <MarketState message="No normalized market observations are available yet." />
-        )}
-        {markets.status === 'ready' && markets.data.items.length > 0 && (
-          <div className="market-table" role="table" aria-label="Latest market observations">
-            <div className="market-table__head" role="row">
-              <span>Market</span><span>Median price</span><span>Yield</span><span>Growth</span><span>Inventory</span>
-            </div>
-            {markets.data.items.slice(0, 8).map((market, index) => (
-              <button className={`market-row${selected?.id === market.id ? ' is-selected' : ''}`} role="row" onClick={() => setSelectedId(market.id)} key={market.id}>
-                <div className="market-row__identity">
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <div><strong>{market.location_name}</strong><small>{market.country_code} / {market.property_type ?? 'ALL PROPERTY'}</small></div>
-                </div>
-                <span>{formatMoney(market.latest.median_sale_price, market.latest.currency)}</span>
-                <span>{formatPercent(market.latest.gross_yield_percent)}</span>
-                <span className={Number(market.latest.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>
-                  {formatPercent(market.latest.annual_growth_percent)}
-                </span>
-                <span>{market.latest.active_inventory ?? '—'}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
-      </div>
-      <aside className="selected-market-panel" aria-label="Selected market">
-        <div className="selected-market-panel__head"><DataLabel>Selected market</DataLabel>{selected && <Link to={`/markets/${selected.id}`}>Full analysis ↗</Link>}</div>
-        {selected ? <><div className={`selected-market-panel__visual${selectedProperty?.media_urls[0] ? ' has-media' : ''}`}>{selectedProperty?.media_urls[0] && <img src={selectedProperty.media_urls[0]} alt="" referrerPolicy="no-referrer" />}<div><span>{selectedProperty?.address_line || selected.location_name}</span><small>{selectedProperty ? `Latest active listing / ${selectedProperty.source_name}` : `${selected.country_code} / ${selected.property_type ?? 'ALL PROPERTY'}`}</small></div></div><div className="selected-market-panel__identity"><h2>{selected.location_name}</h2><p>{selected.country_code} · {selected.property_type ?? 'Residential market'}</p>{selectedProperty && <Link className="selected-market-panel__listing" to={`/properties/${selectedProperty.id}`}>{formatMoney(selectedProperty.price, selectedProperty.currency)} active listing ↗</Link>}</div><div className="selected-market-panel__price"><div><DataLabel>Median observed price</DataLabel><strong>{formatMoney(selected.latest.median_sale_price, selected.latest.currency)}</strong></div><span className={Number(selected.latest.annual_growth_percent) >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(selected.latest.annual_growth_percent)}<small>Annual growth</small></span></div><dl className="selected-market-panel__metrics"><div><dt>Gross yield</dt><dd>{formatPercent(selected.latest.gross_yield_percent)}</dd></div><div><dt>Monthly rent</dt><dd>{formatMoney(selected.latest.median_rent_monthly, selected.latest.currency)}</dd></div><div><dt>Inventory</dt><dd>{selected.latest.active_inventory ?? '—'}</dd></div><div><dt>Observed</dt><dd>{selected.latest.observed_on ?? '—'}</dd></div></dl><div className="selected-market-panel__chart"><DataLabel>Observed price history</DataLabel>{selectedDetail ? <CompactMarketChart history={selectedDetail.history} /> : <p>Loading real observations…</p>}</div>{selectedScore && <MarketScoreProfile score={selectedScore} />}<div className="selected-market-panel__actions"><Link to={`/markets/${selected.id}`}>Study market</Link><Link to={`/explore?location_id=${selected.location_id}&limit=20`}>Explore assets</Link></div><p className="selected-market-panel__note">Latest listing means the first active normalized result, not an endorsement. This is research, not an investment offering.</p></> : <div className="selected-market-panel__empty">Select a market point to study its current observations.</div>}
-      </aside>
-    </main>
-  )
+  return <main className="market-page market-dashboard"><div className="market-dashboard__main">
+    <section className="market-hero" aria-labelledby="market-title"><div className="market-hero__heading"><DataLabel>01 / Global residential market</DataLabel><h1 id="market-title">The physical world,<br />priced.</h1></div><div className="market-hero__statement"><p>57 country markets. One comparable, source-backed view of residential price movement.</p><span>BIS / quarterly observations</span></div></section>
+    <section className="market-canvas" aria-label="Global residential market visualization"><div className="market-canvas__toolbar"><DataLabel>World / official BIS indices</DataLabel><div className="metric-switcher" aria-label="Map metric">{metricOptions.map((option) => <button className={metric === option ? 'is-active' : ''} key={option} type="button" onClick={() => setMetric(option)} disabled={option === 'Yield' || option === 'Demand'}>{option}</button>)}</div></div><div className="world-field" aria-label={`Country market map showing ${metric.toLowerCase()}`}><div className="world-field__grid" /><WorldGeometry />{instruments.map((instrument) => { const countryName = String(instrument.metadata.country_name ?? instrument.name.replace(' Residential Price Index', '')); const point = projectCountryName(countryName); return point && <button className={`market-map-point market-map-point--${metric.toLowerCase()}${selected?.id === instrument.id ? ' is-selected' : ''}`} style={point} onClick={() => setSelectedId(instrument.id)} key={instrument.id} aria-label={`${countryName}: ${metric === 'Growth' ? formatPercent(instrument.annual_change_percent) : formatIndex(instrument.value)}`}><i /><span><strong>{countryName}</strong><small>{metric === 'Growth' ? formatPercent(instrument.annual_change_percent) : formatIndex(instrument.value)}</small></span></button> })}<div className="world-field__axis"><span>180°W</span><span>0°</span><span>180°E</span></div></div><p className="availability-note">Country points use official BIS selected nominal residential indices. Yield and demand remain unavailable until source-backed methodologies exist.</p></section>
+    <section className="market-feed" aria-labelledby="market-feed-title"><div className="market-feed__header"><div><DataLabel>Global market movers</DataLabel><h2 id="market-feed-title">Movement, not noise.</h2></div>{markets.status === 'ready' && <MarketNumber compact label="COUNTRY MARKETS" value={String(markets.data.total)} />}<Link className="market-compare-link" to="/explore?view=markets">Explore all 57 ↗</Link></div>{markets.status === 'loading' && <MarketState message="Reading official country indices…" />}{markets.status === 'error' && <MarketState message={markets.message} error />}{markets.status === 'ready' && <div className="global-market-grid"><div className="market-table" role="table" aria-label="Largest annual country-market movements"><div className="market-table__head" role="row"><span>Market</span><span>Index</span><span>12M change</span><span>Observed</span><span>Mode</span></div>{movers.map((instrument, index) => <button className={`market-row${selected?.id === instrument.id ? ' is-selected' : ''}`} role="row" onClick={() => setSelectedId(instrument.id)} key={instrument.id}><div className="market-row__identity"><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{String(instrument.metadata.country_name ?? instrument.country_code)}</strong><small>{instrument.country_code} / RESIDENTIAL INDEX</small></div></div><span>{formatIndex(instrument.value)}</span><span className={signalClass(instrument.annual_change_percent)}>{formatPercent(instrument.annual_change_percent)}</span><span>{instrument.observed_on ?? '—'}</span><span>PAPER</span></button>)}</div><MarketBreadth score={breadth.score} positive={breadth.positive} total={breadth.total} average={breadth.average} /></div>}</section>
+  </div><aside className="selected-market-panel" aria-label="Selected market"><div className="selected-market-panel__head"><DataLabel>Selected country market</DataLabel>{selected?.source_url && <a href={selected.source_url} target="_blank" rel="noreferrer">Verify source ↗</a>}</div>{selected ? <><div className="selected-market-panel__visual"><div><span>{String(selected.metadata.country_name ?? selected.country_code)}</span><small>{selected.country_code} / BIS RESIDENTIAL INDEX</small></div></div><div className="selected-market-panel__identity"><h2>{selected.name}</h2><p>Market proxy · Quarterly · Paper only</p></div><div className="selected-market-panel__price"><div><DataLabel>Latest index value</DataLabel><strong>{formatIndex(selected.value)}</strong></div><span className={signalClass(selected.annual_change_percent)}>{formatPercent(selected.annual_change_percent)}<small>12 month change</small></span></div><dl className="selected-market-panel__metrics"><div><dt>Observation</dt><dd>{selected.observed_on ?? '—'}</dd></div><div><dt>Frequency</dt><dd>Quarterly</dd></div><div><dt>Liquidity</dt><dd>Index proxy</dd></div><div><dt>Real money</dt><dd>Disabled</dd></div></dl><div className="selected-market-panel__chart"><DataLabel>Official index history / 120 quarters</DataLabel>{detail ? <InstrumentHistoryChart detail={detail} /> : <p>Loading verified observations…</p>}</div><div className="selected-market-panel__actions"><Link to="/explore?view=markets">Study universe</Link><Link to={`/explore?view=opportunities&country_code=${selected.country_code}&limit=20`}>Research listings</Link></div><p className="selected-market-panel__note">This is a source-backed market proxy for research and paper performance—not a property offering, recommendation, or real-money product.</p></> : <div className="selected-market-panel__empty">Select a country to study its verified history.</div>}</aside></main>
 }
 
-function mapValue(metric: (typeof metricOptions)[number], market: { latest: { median_sale_price: string | null; currency: string | null; gross_yield_percent: string | null; annual_growth_percent: string | null } }) {
-  if (metric === 'Price') return formatMoney(market.latest.median_sale_price, market.latest.currency)
-  if (metric === 'Yield') return formatPercent(market.latest.gross_yield_percent)
-  if (metric === 'Growth') return formatPercent(market.latest.annual_growth_percent)
-  return 'Unavailable'
-}
-
-function MarketState({ message, error = false }: { message: string; error?: boolean }) {
-  return <div className={`market-state${error ? ' market-state--error' : ''}`}>{message}</div>
-}
-function CompactMarketChart({ history }: { history: MarketMetric[] }) { const points = [...history].reverse(); const values = points.map((point) => Number(point.median_sale_price)).filter(Number.isFinite); if (values.length < 2) return <p>More verified observations are needed before a trend can be drawn.</p>; const min = Math.min(...values), max = Math.max(...values), spread = max - min || 1; const path = values.map((value, index) => `${index ? 'L' : 'M'} ${(index / (values.length - 1)) * 100} ${92 - ((value - min) / spread) * 78}`).join(' '); return <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Observed market price history"><path className="compact-market-chart__area" d={`${path} L 100 100 L 0 100 Z`} /><path className="compact-market-chart__line" d={path} /></svg> }
-function MarketScoreProfile({ score }: { score: PropertyScore }) { return <section className="selected-market-score"><div><DataLabel>Explainable market score</DataLabel><strong>{score.overall_score ?? '—'}</strong></div><div className="selected-market-score__components">{score.components.slice(0, 5).map((component) => <div title={component.methodology} key={component.name}><span>{component.name}</span><strong>{component.score ?? 'N/A'}</strong></div>)}</div>{score.unavailable_components.length > 0 && <p>Unavailable: {score.unavailable_components.join(', ')}</p>}</section> }
+function formatIndex(value: string | null) { return value === null || !Number.isFinite(Number(value)) ? '—' : `${Number(value).toFixed(1)} pts` }
+function signalClass(value: string | null) { return value !== null && Number(value) >= 0 ? 'signal--positive' : 'signal--negative' }
+function MarketState({ message, error = false }: { message: string; error?: boolean }) { return <div className={`market-state${error ? ' market-state--error' : ''}`}>{message}</div> }
+function InstrumentHistoryChart({ detail }: { detail: InstrumentDetail }) { const points = [...detail.history].reverse(); const values = points.map((point) => Number(point.value)).filter(Number.isFinite); if (values.length < 2) return <p>More observations are required.</p>; const min = Math.min(...values), max = Math.max(...values), spread = max - min || 1; const path = values.map((value, index) => `${index ? 'L' : 'M'} ${(index / (values.length - 1)) * 100} ${92 - ((value - min) / spread) * 78}`).join(' '); return <><svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Official residential price index history"><path className="compact-market-chart__area" d={`${path} L 100 100 L 0 100 Z`} /><path className="compact-market-chart__line" d={path} /></svg><div className="market-chart-years"><span>{points[0]?.observed_on.slice(0, 4)}</span><span>{points.at(-1)?.observed_on.slice(0, 4)}</span></div></> }
+function MarketBreadth({ score, positive, total, average }: { score: number; positive: number; total: number; average: number }) { return <aside className="market-breadth"><DataLabel>Global market sentiment</DataLabel><div className="market-breadth__ring" style={{ '--breadth': `${score * 3.6}deg` } as CSSProperties}><strong>{score}</strong><span>{score >= 60 ? 'BULLISH' : score >= 45 ? 'MIXED' : 'BEARISH'}</span></div><p>Direction of official 12-month changes across available country indices.</p><dl><div><dt>Positive markets</dt><dd>{positive} / {total}</dd></div><div><dt>Average change</dt><dd className={average >= 0 ? 'signal--positive' : 'signal--negative'}>{formatPercent(String(average))}</dd></div><div><dt>Coverage</dt><dd>57 countries</dd></div><div><dt>Source</dt><dd>BIS</dd></div></dl></aside> }
