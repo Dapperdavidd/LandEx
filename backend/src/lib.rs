@@ -77,6 +77,9 @@ pub fn configure_api(config: &mut web::ServiceConfig) {
             .service(routes::paper_accounts::get_paper_account_allocation)
             .service(routes::paper_accounts::get_paper_account_performance_history)
             .service(routes::paper_accounts::list_paper_account_trades)
+            .service(routes::paper_accounts::get_instrument_performance)
+            .service(routes::paper_accounts::list_instrument_trades)
+            .service(routes::paper_accounts::execute_instrument_order)
             .service(routes::paper_accounts::execute_paper_order),
     );
 }

@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     error::ApiError,
+    repository::instrument_portfolio::InstrumentPortfolioRepository,
     repository::paper_account::{PaperAccountRepository, PaperTradeError},
     routes::auth::authenticate,
     state::AppState,
@@ -26,6 +27,16 @@ pub struct CreatePaperAccountRequest {
 #[derive(Debug, Deserialize)]
 pub struct PaperOrderRequest {
     property_id: Uuid,
+    side: String,
+    #[serde(default, with = "rust_decimal::serde::str_option")]
+    amount: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::str_option")]
+    units: Option<Decimal>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InstrumentPaperOrderRequest {
+    instrument_id: Uuid,
     side: String,
     #[serde(default, with = "rust_decimal::serde::str_option")]
     amount: Option<Decimal>,
@@ -137,6 +148,77 @@ pub async fn list_paper_account_trades(
         .map_err(database_error)?
         .ok_or(ApiError::NotFound)?;
     Ok(HttpResponse::Ok().json(trades))
+}
+
+#[get("/paper-accounts/{account_id}/instrument-performance")]
+pub async fn get_instrument_performance(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let performance = InstrumentPortfolioRepository::new(state.database.clone())
+        .performance(user.id, account_id.into_inner())
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(performance))
+}
+
+#[get("/paper-accounts/{account_id}/instrument-trades")]
+pub async fn list_instrument_trades(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let trades = InstrumentPortfolioRepository::new(state.database.clone())
+        .trades(user.id, account_id.into_inner(), 100)
+        .await
+        .map_err(database_error)?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(trades))
+}
+
+#[post("/paper-accounts/{account_id}/instrument-orders")]
+pub async fn execute_instrument_order(
+    state: web::Data<AppState>,
+    request: HttpRequest,
+    account_id: web::Path<Uuid>,
+    body: web::Json<InstrumentPaperOrderRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let user = authenticate(&state, &request).await?;
+    let repository = InstrumentPortfolioRepository::new(state.database.clone());
+    let account_id = account_id.into_inner();
+    let trade = match body.side.trim().to_lowercase().as_str() {
+        "buy" => {
+            repository
+                .buy(
+                    user.id,
+                    account_id,
+                    body.instrument_id,
+                    valid_quantity(body.amount, body.units, "amount")?,
+                )
+                .await
+        }
+        "sell" => {
+            repository
+                .sell(
+                    user.id,
+                    account_id,
+                    body.instrument_id,
+                    valid_quantity(body.units, body.amount, "units")?,
+                )
+                .await
+        }
+        _ => {
+            return Err(ApiError::InvalidRequest(
+                "side must be buy or sell".to_owned(),
+            ));
+        }
+    }
+    .map_err(map_trade_error)?;
+    Ok(HttpResponse::Created().json(trade))
 }
 
 #[post("/paper-accounts/{account_id}/orders")]
