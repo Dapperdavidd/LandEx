@@ -9,7 +9,7 @@ use crate::{
 };
 
 const DEFAULT_LIMIT: i64 = 20;
-const MAX_LIMIT: i64 = 100;
+const MAX_LIMIT: i64 = 300;
 
 #[derive(Debug, Deserialize)]
 pub struct LocationSearchQuery {
