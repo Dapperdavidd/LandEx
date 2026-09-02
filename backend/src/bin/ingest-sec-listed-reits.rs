@@ -91,7 +91,6 @@ async fn load_dataset(source_url: &str, cache_path: &str, user_agent: &str) -> i
     let response = reqwest::Client::new()
         .get(source_url)
         .header(reqwest::header::USER_AGENT, user_agent)
-        .header(reqwest::header::ACCEPT_ENCODING, "gzip, deflate")
         .send()
         .await
         .map_err(io::Error::other)?
