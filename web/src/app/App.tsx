@@ -13,6 +13,7 @@ import { PortfolioPage } from '../pages/PortfolioPage'
 import { MarketDetailPage } from '../pages/MarketDetailPage'
 import { MarketComparisonPage } from '../pages/MarketComparisonPage'
 import { SignalsPage } from '../pages/SignalsPage'
+import { InstrumentInvestPage } from '../pages/InstrumentInvestPage'
 
 export function App() {
   return (
@@ -28,6 +29,7 @@ export function App() {
         <Route path="/watchlist" element={<ProtectedRoute><WatchlistPage /></ProtectedRoute>} />
         <Route path="/portfolio" element={<ProtectedRoute><PortfolioPage /></ProtectedRoute>} />
         <Route path="/simulate" element={<ProtectedRoute><SimulatePage /></ProtectedRoute>} />
+        <Route path="/paper-invest" element={<ProtectedRoute><InstrumentInvestPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="*" element={<PlaceholderPage section="Not found" description="That market surface does not exist." />} />
       </Routes>
