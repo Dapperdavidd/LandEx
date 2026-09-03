@@ -86,8 +86,9 @@ export function ExplorePage() {
 }
 
 function ListedInstrumentUniverse() {
+  const [searchParams] = useSearchParams()
   const instruments = useInstruments('', 100, 'sec-edgar-listed-reits')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('instrument'))
   const [loadedDetail, setLoadedDetail] = useState<{ id: string; value: InstrumentDetail } | null>(null)
   const listedItems = instruments.status === 'ready' ? instruments.data.items : []
   const selected = listedItems.find((item) => item.id === selectedId) ?? listedItems[0] ?? null

@@ -35,6 +35,14 @@ impl InstrumentRepository {
             WHERE TRUE
         "#,
         );
+        if let Some(search) = &filters.query {
+            query
+                .push(" AND (i.name ILIKE ")
+                .push_bind(format!("%{search}%"))
+                .push(" OR i.symbol ILIKE ")
+                .push_bind(format!("%{search}%"))
+                .push(")");
+        }
         if let Some(kind) = &filters.kind {
             query.push(" AND i.instrument_kind = ").push_bind(kind);
         }
@@ -115,6 +123,7 @@ impl InstrumentRepository {
 
 #[derive(Debug)]
 pub struct InstrumentFilters {
+    pub query: Option<String>,
     pub kind: Option<String>,
     pub status: Option<String>,
     pub country_code: Option<String>,

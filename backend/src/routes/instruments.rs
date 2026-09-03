@@ -11,6 +11,7 @@ const MAX_LIMIT: i64 = 100;
 
 #[derive(Deserialize)]
 pub struct InstrumentQuery {
+    q: Option<String>,
     kind: Option<String>,
     status: Option<String>,
     country_code: Option<String>,
@@ -36,6 +37,17 @@ pub async fn list(
         return Err(ApiError::InvalidRequest("invalid pagination".into()));
     }
     let country_code = q.country_code.map(|v| v.trim().to_ascii_uppercase());
+    let search =
+        q.q.map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+    if search
+        .as_ref()
+        .is_some_and(|value| value.len() < 2 || value.len() > 100)
+    {
+        return Err(ApiError::InvalidRequest(
+            "q must contain between 2 and 100 characters".into(),
+        ));
+    }
     if country_code
         .as_ref()
         .is_some_and(|v| v.len() != 2 || !v.bytes().all(|b| b.is_ascii_alphabetic()))
@@ -74,6 +86,7 @@ pub async fn list(
     }
     let page = InstrumentRepository::new(state.database.clone())
         .search(&InstrumentFilters {
+            query: search,
             kind: q.kind,
             status: q.status,
             country_code,
