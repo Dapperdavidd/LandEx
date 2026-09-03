@@ -82,9 +82,10 @@ pub async fn add_watchlist_item(
         "property" => WatchTarget::Property(body.target_id),
         "market" => WatchTarget::Market(body.target_id),
         "location" => WatchTarget::Location(body.target_id),
+        "instrument" => WatchTarget::Instrument(body.target_id),
         _ => {
             return Err(ApiError::InvalidRequest(
-                "target_type must be property, market, or location".to_owned(),
+                "target_type must be property, market, location, or instrument".to_owned(),
             ));
         }
     };

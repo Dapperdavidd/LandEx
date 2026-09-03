@@ -330,7 +330,7 @@ fn map_trade_error(error: PaperTradeError) -> ApiError {
     match error {
         PaperTradeError::AccountNotFound | PaperTradeError::PriceUnavailable => ApiError::NotFound,
         PaperTradeError::CurrencyMismatch => ApiError::InvalidRequest(
-            "property currency must match the paper account until FX conversion is supported"
+            "asset currency must match the paper account until FX conversion is supported"
                 .to_owned(),
         ),
         PaperTradeError::InsufficientCash => {

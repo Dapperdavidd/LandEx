@@ -48,7 +48,7 @@ async fn keeps_watchlists_private_and_supports_each_target_type(pool: PgPool) {
         .as_str()
         .expect("second access token")
         .to_owned();
-    let (property_id, market_id, location_id) = seed_targets(&pool).await;
+    let (property_id, market_id, location_id, instrument_id) = seed_targets(&pool).await;
 
     let create = authorized(
         test::TestRequest::post().uri("/api/v1/watchlists"),
@@ -65,6 +65,7 @@ async fn keeps_watchlists_private_and_supports_each_target_type(pool: PgPool) {
         ("property", property_id),
         ("market", market_id),
         ("location", location_id),
+        ("instrument", instrument_id),
     ] {
         let add = authorized(
             test::TestRequest::post().uri(&format!("/api/v1/watchlists/{watchlist_id}/items")),
@@ -91,8 +92,15 @@ async fn keeps_watchlists_private_and_supports_each_target_type(pool: PgPool) {
     let detail_response = test::call_service(&app, detail).await;
     assert_eq!(detail_response.status(), 200);
     let detail_body: Value = test::read_body_json(detail_response).await;
-    assert_eq!(detail_body["item_count"], 3);
-    assert_eq!(detail_body["items"].as_array().expect("items").len(), 3);
+    assert_eq!(detail_body["item_count"], 4);
+    assert_eq!(detail_body["items"].as_array().expect("items").len(), 4);
+    assert!(
+        detail_body["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .any(|item| item["instrument_id"] == instrument_id.to_string())
+    );
 
     let private = authorized(
         test::TestRequest::get().uri(&format!("/api/v1/watchlists/{watchlist_id}")),
@@ -115,7 +123,7 @@ fn authorized(mut request: test::TestRequest, token: &str) -> test::TestRequest 
     request
 }
 
-async fn seed_targets(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
+async fn seed_targets(pool: &PgPool) -> (Uuid, Uuid, Uuid, Uuid) {
     let location_id: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO locations (kind, name, normalized_name, country_code)
@@ -148,5 +156,11 @@ async fn seed_targets(pool: &PgPool) -> (Uuid, Uuid, Uuid) {
     .fetch_one(pool)
     .await
     .expect("seed market");
-    (property_id, market_id, location_id)
+    let instrument_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO investment_instruments (slug,name,instrument_kind,status,country_code,currency,valuation_method,liquidity_class) VALUES ('test-reit','Test REIT','listed_security','research','US','USD','SEC identity','listed') RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("seed instrument");
+    (property_id, market_id, location_id, instrument_id)
 }

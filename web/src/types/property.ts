@@ -36,7 +36,7 @@ export interface LocationCategory { category: string; feature_count: number; nea
 export interface NearbyFeature { id: string; category: string; kind: string; name: string | null; latitude: number; longitude: number; distance_meters: number; observed_at: string; expires_at: string }
 export interface PropertyLocationIntelligence { property_id: string; property_latitude: number | null; property_longitude: number | null; radius_meters: number; cache: { populated: boolean; fresh: boolean; observed_at: string | null; expires_at: string | null }; categories: LocationCategory[]; features: NearbyFeature[] }
 export interface WatchlistSummary { id: string; name: string; item_count: number; created_at: string; updated_at: string }
-export interface WatchlistItem { id: string; property_id: string | null; market_id: string | null; location_id: string | null; created_at: string }
+export interface WatchlistItem { id: string; property_id: string | null; market_id: string | null; location_id: string | null; instrument_id: string | null; created_at: string }
 export interface WatchlistDetail extends WatchlistSummary { items: WatchlistItem[] }
 export interface Notification { id: string; notification_type: string; title: string; body: string; read_at: string | null; created_at: string }
 export interface AlertRule { id: string; watchlist_item_id: string | null; saved_search_id: string | null; alert_type: string; threshold: string | null; enabled: boolean; created_at: string; updated_at: string }

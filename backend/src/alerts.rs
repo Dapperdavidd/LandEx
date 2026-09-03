@@ -29,6 +29,7 @@ struct Rule {
     last_text_value: Option<String>,
     property_id: Option<Uuid>,
     market_id: Option<Uuid>,
+    instrument_id: Option<Uuid>,
     saved_search_criteria: Option<serde_json::Value>,
 }
 
@@ -48,7 +49,8 @@ impl AlertEvaluationService {
             r#"
             SELECT ar.id, ar.user_id, ar.alert_type, ar.threshold,
                    ar.last_numeric_value, ar.last_text_value,
-                   wi.property_id, wi.market_id, ss.criteria AS saved_search_criteria
+                   wi.property_id, wi.market_id, wi.instrument_id,
+                   ss.criteria AS saved_search_criteria
             FROM alert_rules ar
             LEFT JOIN watchlist_items wi ON wi.id=ar.watchlist_item_id
             LEFT JOIN saved_searches ss ON ss.id=ar.saved_search_id
@@ -140,6 +142,14 @@ impl AlertEvaluationService {
             && let Some(market_id) = rule.market_id
         {
             return Ok(numeric(&self.pool, "SELECT annual_growth_percent FROM market_observations WHERE market_id=$1 AND annual_growth_percent IS NOT NULL ORDER BY observed_on DESC, created_at DESC LIMIT 1", market_id).await?.map(Snapshot::Numeric));
+        }
+        if let Some(instrument_id) = rule.instrument_id {
+            let value = match rule.alert_type.as_str() {
+                "price_change" => numeric(&self.pool, "SELECT value FROM instrument_observations WHERE instrument_id=$1 ORDER BY observed_on DESC, created_at DESC LIMIT 1", instrument_id).await?,
+                "market_change" => numeric(&self.pool, "SELECT annual_change_percent FROM instrument_observations WHERE instrument_id=$1 AND annual_change_percent IS NOT NULL ORDER BY observed_on DESC, created_at DESC LIMIT 1", instrument_id).await?,
+                _ => None,
+            };
+            return Ok(value.map(Snapshot::Numeric));
         }
         Ok(None)
     }

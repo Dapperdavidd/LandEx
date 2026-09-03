@@ -81,6 +81,13 @@ struct LatestMark {
     current_price: Decimal,
     observed_on: NaiveDate,
 }
+#[derive(Debug, sqlx::FromRow)]
+struct TradeMark {
+    value: Decimal,
+    observed_on: NaiveDate,
+    currency: String,
+    instrument_kind: String,
+}
 #[derive(Default)]
 struct PositionState {
     units: Decimal,
@@ -188,7 +195,12 @@ impl InstrumentPortfolioRepository {
     ) -> Result<InstrumentPaperTrade, PaperTradeError> {
         let mut tx = self.pool.begin().await?;
         let currency = lock_account(&mut tx, user_id, account_id).await?;
-        let (price, observed_on) = latest_mark(&mut tx, instrument_id).await?;
+        let mark = latest_mark(&mut tx, instrument_id).await?;
+        if mark.instrument_kind == "listed_security" && mark.currency != currency {
+            return Err(PaperTradeError::CurrencyMismatch);
+        }
+        let price = mark.value;
+        let observed_on = mark.observed_on;
         let cash: Decimal = sqlx::query_scalar(
             "SELECT COALESCE(SUM(amount),0) FROM paper_cash_ledger WHERE account_id=$1",
         )
@@ -229,7 +241,12 @@ impl InstrumentPortfolioRepository {
         if held < units {
             return Err(PaperTradeError::InsufficientUnits);
         }
-        let (price, observed_on) = latest_mark(&mut tx, instrument_id).await?;
+        let mark = latest_mark(&mut tx, instrument_id).await?;
+        if mark.instrument_kind == "listed_security" && mark.currency != currency {
+            return Err(PaperTradeError::CurrencyMismatch);
+        }
+        let price = mark.value;
+        let observed_on = mark.observed_on;
         let amount = (units * price).round_dp(4);
         let trade = insert_trade(
             &mut tx,
@@ -270,8 +287,8 @@ async fn lock_account(
 async fn latest_mark(
     tx: &mut Transaction<'_, Postgres>,
     instrument_id: Uuid,
-) -> Result<(Decimal, NaiveDate), PaperTradeError> {
-    sqlx::query_as("SELECT o.value, o.observed_on FROM investment_instruments i JOIN instrument_observations o ON o.instrument_id=i.id WHERE i.id=$1 AND i.status='paper_tradeable' AND o.value>0 ORDER BY o.observed_on DESC LIMIT 1").bind(instrument_id).fetch_optional(&mut **tx).await?.ok_or(PaperTradeError::PriceUnavailable)
+) -> Result<TradeMark, PaperTradeError> {
+    sqlx::query_as("SELECT o.value, o.observed_on, o.currency, i.instrument_kind FROM investment_instruments i JOIN instrument_observations o ON o.instrument_id=i.id WHERE i.id=$1 AND i.status='paper_tradeable' AND o.value>0 ORDER BY o.observed_on DESC LIMIT 1").bind(instrument_id).fetch_optional(&mut **tx).await?.ok_or(PaperTradeError::PriceUnavailable)
 }
 #[allow(clippy::too_many_arguments)]
 async fn insert_trade(

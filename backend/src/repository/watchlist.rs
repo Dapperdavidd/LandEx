@@ -23,6 +23,7 @@ pub struct WatchlistItem {
     pub property_id: Option<Uuid>,
     pub market_id: Option<Uuid>,
     pub location_id: Option<Uuid>,
+    pub instrument_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -38,6 +39,7 @@ pub enum WatchTarget {
     Property(Uuid),
     Market(Uuid),
     Location(Uuid),
+    Instrument(Uuid),
 }
 
 impl WatchlistRepository {
@@ -101,7 +103,7 @@ impl WatchlistRepository {
 
         let items = sqlx::query_as::<_, WatchlistItem>(
             r#"
-            SELECT id, property_id, market_id, location_id, created_at
+            SELECT id, property_id, market_id, location_id, instrument_id, created_at
             FROM watchlist_items
             WHERE watchlist_id = $1
             ORDER BY created_at DESC
@@ -120,19 +122,20 @@ impl WatchlistRepository {
         watchlist_id: Uuid,
         target: WatchTarget,
     ) -> Result<Option<WatchlistItem>, sqlx::Error> {
-        let (property_id, market_id, location_id) = match target {
-            WatchTarget::Property(id) => (Some(id), None, None),
-            WatchTarget::Market(id) => (None, Some(id), None),
-            WatchTarget::Location(id) => (None, None, Some(id)),
+        let (property_id, market_id, location_id, instrument_id) = match target {
+            WatchTarget::Property(id) => (Some(id), None, None, None),
+            WatchTarget::Market(id) => (None, Some(id), None, None),
+            WatchTarget::Location(id) => (None, None, Some(id), None),
+            WatchTarget::Instrument(id) => (None, None, None, Some(id)),
         };
 
         sqlx::query_as(
             r#"
-            INSERT INTO watchlist_items (watchlist_id, property_id, market_id, location_id)
-            SELECT watchlists.id, $3, $4, $5
+            INSERT INTO watchlist_items (watchlist_id, property_id, market_id, location_id, instrument_id)
+            SELECT watchlists.id, $3, $4, $5, $6
             FROM watchlists
             WHERE watchlists.id = $1 AND watchlists.user_id = $2
-            RETURNING id, property_id, market_id, location_id, created_at
+            RETURNING id, property_id, market_id, location_id, instrument_id, created_at
             "#,
         )
         .bind(watchlist_id)
@@ -140,6 +143,7 @@ impl WatchlistRepository {
         .bind(property_id)
         .bind(market_id)
         .bind(location_id)
+        .bind(instrument_id)
         .fetch_optional(&self.pool)
         .await
     }
