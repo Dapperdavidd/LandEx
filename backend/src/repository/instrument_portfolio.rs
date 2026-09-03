@@ -47,6 +47,8 @@ pub struct InstrumentPosition {
     pub name: String,
     pub country_code: String,
     pub instrument_kind: String,
+    pub symbol: Option<String>,
+    pub exchange: Option<String>,
     #[serde(with = "rust_decimal::serde::str")]
     pub units: Decimal,
     #[serde(with = "rust_decimal::serde::str")]
@@ -78,6 +80,8 @@ struct LatestMark {
     name: String,
     country_code: String,
     instrument_kind: String,
+    symbol: Option<String>,
+    exchange: Option<String>,
     current_price: Decimal,
     observed_on: NaiveDate,
 }
@@ -142,7 +146,7 @@ impl InstrumentPortfolioRepository {
             }
         }
         let ids = states.keys().copied().collect::<Vec<_>>();
-        let marks: Vec<LatestMark> = sqlx::query_as("SELECT DISTINCT ON (i.id) i.id AS instrument_id, i.name, i.country_code, i.instrument_kind, o.value AS current_price, o.observed_on FROM investment_instruments i JOIN instrument_observations o ON o.instrument_id=i.id WHERE i.id=ANY($1) ORDER BY i.id, o.observed_on DESC").bind(ids).fetch_all(&self.pool).await?;
+        let marks: Vec<LatestMark> = sqlx::query_as("SELECT DISTINCT ON (i.id) i.id AS instrument_id, i.name, i.country_code, i.instrument_kind, i.symbol, i.exchange, o.value AS current_price, o.observed_on FROM investment_instruments i JOIN instrument_observations o ON o.instrument_id=i.id WHERE i.id=ANY($1) ORDER BY i.id, o.observed_on DESC").bind(ids).fetch_all(&self.pool).await?;
         let mut positions = Vec::new();
         for mark in marks {
             let Some(state) = states.get(&mark.instrument_id) else {
@@ -159,6 +163,8 @@ impl InstrumentPortfolioRepository {
                 name: mark.name,
                 country_code: mark.country_code,
                 instrument_kind: mark.instrument_kind,
+                symbol: mark.symbol,
+                exchange: mark.exchange,
                 units: state.units,
                 average_entry_price: average,
                 current_price: mark.current_price,
