@@ -1,4 +1,4 @@
-use std::{env, fs, io, path::Path, time::Duration};
+use std::{collections::HashMap, env, fs, io, path::Path, time::Duration};
 
 use landex_api::{config::Config, state::AppState};
 use serde::Deserialize;
@@ -10,6 +10,9 @@ const DEFAULT_URL: &str = "https://www.sec.gov/files/company_tickers_exchange.js
 const SOURCE_PAGE: &str =
     "https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data";
 const DEFAULT_CACHE_PATH: &str = ".data/sec/company-tickers-exchange.json";
+const DEFAULT_SIC_URL: &str =
+    "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&SIC=6798&owner=include&count=100";
+const DEFAULT_SIC_CACHE_DIR: &str = ".data/sec/sic-6798";
 
 #[derive(Debug, Clone, PartialEq)]
 struct ListedReit {
@@ -47,10 +50,14 @@ async fn main() -> io::Result<()> {
         env::var("SEC_TICKER_EXCHANGE_CACHE_PATH").unwrap_or_else(|_| DEFAULT_CACHE_PATH.into());
     let bytes = load_dataset(&source_url, &cache_path, &user_agent).await?;
     let dataset: SecDataset = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-    let reits = extract_explicit_reits(dataset)?;
-    if reits.len() < 20 {
+    let sic_url = env::var("SEC_REIT_SIC_URL").unwrap_or_else(|_| DEFAULT_SIC_URL.into());
+    let sic_cache_dir =
+        env::var("SEC_REIT_SIC_CACHE_DIR").unwrap_or_else(|_| DEFAULT_SIC_CACHE_DIR.into());
+    let sic_entities = load_sic_entities(&sic_url, &sic_cache_dir, &user_agent).await?;
+    let reits = extract_sic_reits(dataset, &sic_entities)?;
+    if reits.len() < 100 {
         return Err(io::Error::other(format!(
-            "SEC snapshot produced only {} explicit REIT names; refusing a likely incomplete import",
+            "SEC snapshots produced only {} exchange-listed SIC 6798 REIT securities; refusing a likely incomplete import",
             reits.len()
         )));
     }
@@ -60,12 +67,121 @@ async fn main() -> io::Result<()> {
     upsert_instruments(&mut tx, provider_id, &reits)
         .await
         .map_err(io::Error::other)?;
+    restore_quote_metadata(&mut tx, provider_id)
+        .await
+        .map_err(io::Error::other)?;
     tx.commit().await.map_err(io::Error::other)?;
     println!(
         "stored {} SEC-verified listed REIT research instruments (no quote data)",
         reits.len()
     );
     Ok(())
+}
+
+async fn load_sic_entities(
+    source_url: &str,
+    cache_dir: &str,
+    user_agent: &str,
+) -> io::Result<HashMap<i64, String>> {
+    let cache_dir = Path::new(cache_dir);
+    fs::create_dir_all(cache_dir)?;
+    let refresh = env::var("SEC_REIT_SIC_REFRESH")
+        .ok()
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+    let client = reqwest::Client::new();
+    let mut entities = HashMap::new();
+    for page in 0..100 {
+        let start = page * 100;
+        let path = cache_dir.join(format!("{start}.html"));
+        let bytes = if cache_is_fresh(&path, 7 * 24 * 60 * 60) && !refresh {
+            fs::read(&path)?
+        } else {
+            let separator = if source_url.contains('?') { '&' } else { '?' };
+            let url = format!("{source_url}{separator}start={start}");
+            let response = client
+                .get(url)
+                .header(reqwest::header::USER_AGENT, user_agent)
+                .send()
+                .await
+                .map_err(io::Error::other)?
+                .error_for_status()
+                .map_err(io::Error::other)?;
+            let bytes = response.bytes().await.map_err(io::Error::other)?.to_vec();
+            if bytes.len() < 1_000 {
+                return Err(io::Error::other("SEC SIC response is unexpectedly small"));
+            }
+            fs::write(&path, &bytes)?;
+            actix_web::rt::time::sleep(Duration::from_millis(150)).await;
+            bytes
+        };
+        let html = String::from_utf8_lossy(&bytes);
+        let page_entities = extract_sic_entities(&html);
+        let has_next = html.contains("value=\"Next100\"");
+        entities.extend(page_entities);
+        if !has_next {
+            break;
+        }
+    }
+    if entities.len() < 100 {
+        return Err(io::Error::other(format!(
+            "SEC SIC 6798 search returned only {} entities",
+            entities.len()
+        )));
+    }
+    Ok(entities)
+}
+
+fn cache_is_fresh(path: &Path, max_age_seconds: u64) -> bool {
+    path.metadata().ok().is_some_and(|metadata| {
+        metadata.len() > 1_000
+            && metadata.modified().ok().is_some_and(|modified| {
+                modified
+                    .elapsed()
+                    .ok()
+                    .is_some_and(|age| age < Duration::from_secs(max_age_seconds))
+            })
+    })
+}
+
+fn extract_sic_entities(html: &str) -> HashMap<i64, String> {
+    let mut entities = HashMap::new();
+    for row in html.split("<tr>").skip(1) {
+        let Some(cik_start) = row.find("CIK=").map(|index| index + 4) else {
+            continue;
+        };
+        let digits = row[cik_start..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>();
+        let Ok(cik) = digits.parse::<i64>() else {
+            continue;
+        };
+        let cells = row.split("<td").collect::<Vec<_>>();
+        let Some(name_cell) = cells.get(2) else {
+            continue;
+        };
+        let Some(text_start) = name_cell.find('>').map(|index| index + 1) else {
+            continue;
+        };
+        let Some(text_end) = name_cell[text_start..].find("</td>") else {
+            continue;
+        };
+        let name = decode_html(&name_cell[text_start..text_start + text_end]);
+        if !name.is_empty() {
+            entities.insert(cik, name);
+        }
+    }
+    entities
+}
+
+fn decode_html(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&#39;", "'")
+        .replace("&quot;", "\"")
+        .replace("&nbsp;", " ")
+        .trim()
+        .to_owned()
 }
 
 async fn load_dataset(source_url: &str, cache_path: &str, user_agent: &str) -> io::Result<Vec<u8>> {
@@ -106,7 +222,10 @@ async fn load_dataset(source_url: &str, cache_path: &str, user_agent: &str) -> i
     Ok(bytes)
 }
 
-fn extract_explicit_reits(dataset: SecDataset) -> io::Result<Vec<ListedReit>> {
+fn extract_sic_reits(
+    dataset: SecDataset,
+    sic_entities: &HashMap<i64, String>,
+) -> io::Result<Vec<ListedReit>> {
     let index = |field: &str| {
         dataset
             .fields
@@ -122,21 +241,18 @@ fn extract_explicit_reits(dataset: SecDataset) -> io::Result<Vec<ListedReit>> {
         .data
         .into_iter()
         .filter_map(|row| {
-            let name = row.get(name_index)?.as_str()?.trim();
-            let uppercase = name.to_ascii_uppercase();
-            let explicitly_reit = uppercase.contains(" REIT")
-                || uppercase.starts_with("REIT ")
-                || uppercase.contains("REAL ESTATE INVESTMENT TRUST");
-            if !explicitly_reit {
+            let cik = row.get(cik_index)?.as_i64()?;
+            if !sic_entities.contains_key(&cik) {
                 return None;
             }
+            let name = row.get(name_index)?.as_str()?.trim();
             let ticker = row.get(ticker_index)?.as_str()?.trim();
             let exchange = row.get(exchange_index)?.as_str()?.trim();
             if ticker.is_empty() || exchange.is_empty() {
                 return None;
             }
             Some(ListedReit {
-                cik: row.get(cik_index)?.as_i64()?,
+                cik,
                 name: name.to_owned(),
                 ticker: ticker.to_owned(),
                 exchange: exchange.to_owned(),
@@ -186,17 +302,51 @@ async fn upsert_instruments(
                 .push_bind("listed")
                 .push_bind(json!({
                     "cik": reit.cik,
-                    "classification_basis": "Issuer name explicitly identifies a REIT in the SEC ticker/exchange dataset",
+                    "classification_basis": "Issuer appears in the SEC SIC 6798 Real Estate Investment Trusts search and has a current SEC ticker/exchange identity",
+                    "sic": 6798,
                     "identity_source": SOURCE_PAGE,
-                    "quote_coverage": "unavailable",
-                    "paper_tradeable": false
+                    "quote_coverage": "unavailable"
                 }));
         });
         query.push(
-            " ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name,symbol=EXCLUDED.symbol,exchange=EXCLUDED.exchange,provider_id=EXCLUDED.provider_id,source_url=EXCLUDED.source_url,valuation_method=EXCLUDED.valuation_method,metadata=EXCLUDED.metadata,updated_at=NOW()",
+            " ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name,symbol=EXCLUDED.symbol,exchange=EXCLUDED.exchange,provider_id=EXCLUDED.provider_id,source_url=EXCLUDED.source_url,valuation_method=CASE WHEN investment_instruments.status='paper_tradeable' THEN investment_instruments.valuation_method ELSE EXCLUDED.valuation_method END,metadata=investment_instruments.metadata || EXCLUDED.metadata,updated_at=NOW()",
         );
         query.build().execute(&mut **tx).await?;
     }
+    Ok(())
+}
+
+async fn restore_quote_metadata(
+    tx: &mut Transaction<'_, Postgres>,
+    provider_id: Uuid,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        WITH latest AS (
+            SELECT DISTINCT ON (observation.instrument_id)
+                observation.instrument_id, observation.methodology, observation.metadata
+            FROM instrument_observations AS observation
+            WHERE observation.metadata ? 'quote_provider'
+            ORDER BY observation.instrument_id, observation.observed_on DESC
+        )
+        UPDATE investment_instruments AS instrument
+        SET status='paper_tradeable',
+            valuation_method=latest.methodology,
+            metadata=instrument.metadata || jsonb_build_object(
+                'quote_provider', latest.metadata->>'quote_provider',
+                'quote_license_scope', latest.metadata->>'license_scope',
+                'quote_history', 'compact_daily',
+                'quote_coverage', 'source_backed'
+            ),
+            updated_at=NOW()
+        FROM latest
+        WHERE latest.instrument_id=instrument.id
+          AND instrument.provider_id=$1 AND instrument.real_money_enabled=FALSE
+        "#,
+    )
+    .bind(provider_id)
+    .execute(&mut **tx)
+    .await?;
     Ok(())
 }
 
@@ -205,7 +355,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keeps_only_explicit_reit_names_with_complete_market_identity() {
+    fn joins_exchange_listings_to_sec_sic_6798_entities() {
         let dataset = SecDataset {
             fields: vec!["exchange", "ticker", "name", "cik"]
                 .into_iter()
@@ -232,9 +382,22 @@ mod tests {
                 ],
             ],
         };
-        let rows = extract_explicit_reits(dataset).unwrap();
+        let entities = HashMap::from([(42, "EXAMPLE REIT INC".to_owned())]);
+        let rows = extract_sic_reits(dataset, &entities).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].ticker, "REAL");
         assert_eq!(rows[0].exchange, "NYSE");
+    }
+
+    #[test]
+    fn extracts_ciks_and_names_from_sec_sic_results() {
+        let html = r#"<table><tr><th>CIK</th></tr><tr>
+          <td valign="top"><a href="/cgi-bin/browse-edgar?action=getcompany&amp;CIK=0001700461&amp;owner=include">0001700461</a></td>
+          <td scope="row">1st stREIT Office Inc.</td><td>CA</td></tr></table>"#;
+        let entities = extract_sic_entities(html);
+        assert_eq!(
+            entities.get(&1_700_461).map(String::as_str),
+            Some("1st stREIT Office Inc.")
+        );
     }
 }
